@@ -1,0 +1,869 @@
+"use client";
+
+import AppHeader from "@/components/AppHeader";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+
+type AccountType = "conta" | "cartao" | "assinatura" | "despesa" | "receita" | "outro";
+type AccountStatus = "pendente" | "pago" | "cancelado";
+
+
+
+type ControlAccount = {
+  id: string;
+  user_id: string;
+  name: string;
+  account_type: AccountType;
+  amount: number;
+  due_date: string | null;
+  status: AccountStatus;
+  paid_at: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+const typeLabels: Record<AccountType, string> = {
+  conta: "Conta de consumo",
+  cartao: "Cartão",
+  assinatura: "Assinatura",
+  despesa: "Despesa",
+  receita: "Receita",
+  outro: "Outro",
+};
+
+const money = (value: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+
+const today = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+const dateLabel = (value: string | null) =>
+  value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : "—";
+
+export default function ControleContasPage() {
+  const router = useRouter();
+  const [items, setItems] = useState<ControlAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState("");
+  const [filter, setFilter] = useState("todas");
+  const [name, setName] = useState("");
+  const [type, setType] = useState<AccountType>("conta");
+  const [amount, setAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const refresh = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data: auth, error: authError } = await supabase.auth.getUser();
+    if (authError) throw authError;
+    if (!auth.user) {
+      router.replace("/login");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("control_accounts")
+      .select("*")
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    setItems((data ?? []) as ControlAccount[]);
+  }, [router]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        await refresh();
+      } catch (error) {
+        if (active) setFeedback(error instanceof Error ? error.message : "Não foi possível carregar as contas.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [refresh]);
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    let active = true;
+
+    const reload = () => {
+      if (!active || document.visibilityState === "hidden") return;
+      void refresh().catch((error) => {
+        if (active) {
+          setFeedback(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível atualizar as contas."
+          );
+        }
+      });
+    };
+
+    const channel = supabase
+      .channel("control-accounts-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "control_accounts",
+        },
+        reload
+      )
+      .subscribe();
+
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", reload);
+
+    return () => {
+      active = false;
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", reload);
+      void supabase.removeChannel(channel);
+    };
+  }, [refresh]);
+
+  const visibleItems = useMemo(() => {
+    const date = today();
+    return items.filter((item) => {
+      if (filter === "pendente") return item.status === "pendente";
+      if (filter === "vencida") return item.status === "pendente" && !!item.due_date && item.due_date < date;
+      if (filter === "hoje") return item.status === "pendente" && item.due_date === date;
+      if (filter === "pago") return item.status === "pago";
+      if (filter === "receita") return item.account_type === "receita";
+      if (filter === "despesa") return item.account_type !== "receita";
+      return true;
+    });
+  }, [items, filter]);
+
+  const upcomingItems = useMemo(() => {
+    const date = today();
+    return items
+      .filter((item) =>
+        item.status === "pendente" &&
+        item.account_type !== "receita" &&
+        !!item.due_date &&
+        /^\d{4}-\d{2}-\d{2}$/.test(item.due_date) &&
+        item.due_date >= date &&
+        !Number.isNaN(new Date(`${item.due_date}T12:00:00`).getTime())
+      )
+      .sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""))
+      .slice(0, 2);
+  }, [items]);
+
+  const currentDate = today();
+
+  // Compromissos: considera todas as categorias, exceto receitas e cancelamentos.
+  const payableItems = items.filter(
+    (item) => item.account_type !== "receita" && item.status !== "cancelado"
+  );
+
+  const openItems = payableItems.filter((item) => item.status === "pendente");
+  const paidItems = payableItems.filter((item) => item.status === "pago");
+  const overdueItems = openItems.filter(
+    (item) => !!item.due_date && item.due_date < currentDate
+  );
+  const upcomingItemsForSummary = openItems.filter(
+    (item) => !!item.due_date && item.due_date >= currentDate
+  );
+
+  const totalOf = (list: ControlAccount[]) =>
+    list.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+  const openTotal = totalOf(openItems);
+  const overdueTotal = totalOf(overdueItems);
+  const upcomingTotal = totalOf(upcomingItemsForSummary);
+  const paidTotal = totalOf(paidItems);
+  const incomeTotal = totalOf(
+    items.filter(
+      (item) => item.account_type === "receita" && item.status !== "cancelado"
+    )
+  );
+  const overdueCount = overdueItems.length;
+
+  async function addAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFeedback("");
+    const numericAmount = Number(amount.replace(",", "."));
+    if (!name.trim()) {
+      setFeedback("Informe a descrição da conta.");
+      return;
+    }
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setFeedback("Informe um valor maior que zero.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const { error } = await supabase.from("control_accounts").insert({
+        user_id: auth.user.id,
+        name: name.trim(),
+        account_type: type,
+        amount: numericAmount,
+        due_date: dueDate || null,
+        notes: notes.trim() || null,
+      });
+      if (error) throw error;
+
+      setName("");
+      setType("conta");
+      setAmount("");
+      setDueDate("");
+      setNotes("");
+      await refresh();
+      setFeedback("Conta cadastrada com sucesso.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível cadastrar a conta.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function togglePaid(item: ControlAccount) {
+    setActionId(item.id);
+    setFeedback("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const nextStatus: AccountStatus = item.status === "pago" ? "pendente" : "pago";
+      const { error } = await supabase
+        .from("control_accounts")
+        .update({ status: nextStatus, paid_at: nextStatus === "pago" ? today() : null, updated_at: new Date().toISOString() })
+        .eq("id", item.id)
+        .eq("user_id", auth.user.id);
+      if (error) throw error;
+      await refresh();
+      setFeedback(nextStatus === "pago" ? "Conta marcada como paga." : "Conta voltou para em aberto.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível atualizar a conta.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function deleteAccount(item: ControlAccount) {
+    if (!window.confirm(`Excluir "${item.name}"? Esta ação não pode ser desfeita.`)) return;
+    setActionId(item.id);
+    setFeedback("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+      const { error } = await supabase
+        .from("control_accounts")
+        .delete()
+        .eq("id", item.id)
+        .eq("user_id", auth.user.id);
+      if (error) throw error;
+      await refresh();
+      setFeedback("Conta excluída.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível excluir a conta.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  const cardStyle = {
+    background: "var(--card, #fff)",
+    border: "1px solid var(--border, #e2e8f0)",
+    borderRadius: 16,
+    padding: 18,
+    minWidth: 0,
+  } as const;
+  const fieldStyle = {
+    width: "100%",
+    boxSizing: "border-box" as const,
+    border: "1px solid var(--border, #dbe3ec)",
+    borderRadius: 10,
+    padding: "11px 12px",
+    background: "var(--input, #fff)",
+    color: "var(--foreground, #172033)",
+    fontSize: 14,
+  };
+
+  return (
+    <main className="container page" style={{ maxWidth: 1240 }}>
+      <AppHeader />
+      <header
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+          gap: 22,
+          alignItems: "stretch",
+          margin: "28px 0",
+        }}
+      >
+        <section
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            minWidth: 0,
+            padding: "clamp(20px, 3vw, 32px)",
+            borderRadius: 22,
+            background: "linear-gradient(135deg, #0f766e 0%, #115e59 58%, #134e4a 100%)",
+            color: "#ffffff",
+            boxShadow: "0 12px 28px rgba(15, 118, 110, 0.16)",
+          }}
+        >
+          <span style={{
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 1.6,
+            color: "#99f6e4",
+          }}>
+            ORGANIZE SUA VIDA FINANCEIRA
+          </span>
+          <h1 style={{
+            margin: "12px 0",
+            maxWidth: 520,
+            fontSize: "clamp(28px, 3.5vw, 40px)",
+            lineHeight: 1.12,
+            letterSpacing: "-0.035em",
+          }}>
+            Mais organização, menos preocupação.
+          </h1>
+          <p style={{
+            margin: "0 0 20px",
+            maxWidth: 520,
+            color: "#e0f2f1",
+            fontSize: 15,
+            lineHeight: 1.75,
+          }}>
+            Dê o primeiro passo para ter suas contas em dia. Organize seus
+            vencimentos, acompanhe seus gastos e tenha mais clareza para decidir
+            como usar seu dinheiro. Um passo de cada vez já faz diferença.
+          </p>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "#ccfbf1",
+          }}>
+            <span aria-hidden="true" style={{ fontSize: 18 }}>✓</span>
+            Organize hoje para planejar melhor o amanhã.
+          </div>
+        </section>
+
+        <section
+          aria-label="Próximos vencimentos"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            minWidth: 0,
+            padding: 18,
+            border: "1px solid var(--border, #dbe3ec)",
+            borderRadius: 22,
+            background: "var(--card, #fff)",
+            boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
+          }}
+        >
+          <div style={{ marginBottom: 2 }}>
+            <h2 style={{
+              margin: 0,
+              fontSize: 18,
+              lineHeight: 1.35,
+              fontWeight: 800,
+              color: "var(--foreground, #172033)",
+            }}>
+              Seus próximos vencimentos
+            </h2>
+            <p style={{
+              margin: "5px 0 0",
+              color: "var(--muted, #64748b)",
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}>
+              Acompanhe o que precisa de atenção.
+            </p>
+          </div>
+
+          {[0, 1].map((index) => {
+            const item = upcomingItems[index];
+            return (
+              <article
+                key={item?.id ?? `vencimento-vazio-${index}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) auto",
+                  alignItems: "center",
+                  gap: 12,
+                  minWidth: 0,
+                  padding: 15,
+                  borderRadius: 15,
+                  border: "1px solid var(--border, #e2e8f0)",
+                  background: "var(--background, #f8fafc)",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <span style={{
+                    display: "block",
+                    marginBottom: 6,
+                    color: "#0f766e",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: 1,
+                  }}>
+                    {index === 0 ? "PRÓXIMO VENCIMENTO" : "VENCIMENTO SEGUINTE"}
+                  </span>
+                  {item ? (
+                    <>
+                      <div style={{
+                        overflowWrap: "anywhere",
+                        fontSize: 14,
+                        lineHeight: 1.4,
+                        fontWeight: 800,
+                        color: "var(--foreground, #172033)",
+                      }}>
+                        {item.name}
+                      </div>
+                      <div style={{
+                        marginTop: 5,
+                        fontSize: 12,
+                        color: "var(--muted, #64748b)",
+                      }}>
+                        Vence em {dateLabel(item.due_date)}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{
+                        fontSize: 14,
+                        lineHeight: 1.4,
+                        fontWeight: 700,
+                        color: "var(--foreground, #172033)",
+                      }}>
+                        {index === 0 ? "Nenhuma conta próxima" : "Sem outro vencimento"}
+                      </div>
+                      <p style={{
+                        margin: "5px 0 0",
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        color: "var(--muted, #64748b)",
+                      }}>
+                        {index === 0
+                          ? "Cadastre uma conta com data futura."
+                          : "As próximas contas aparecerão aqui."}
+                      </p>
+                    </>
+                  )}
+                </div>
+                {item && (
+                  <div style={{
+                    maxWidth: 145,
+                    textAlign: "right",
+                    overflowWrap: "anywhere",
+                    fontSize: 16,
+                    lineHeight: 1.35,
+                    fontWeight: 800,
+                    color: "#0f766e",
+                  }}>
+                    {money(Number(item.amount))}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+
+
+        </section>
+      </header>
+
+      {feedback && (
+        <div role="status" style={{ ...cardStyle, marginBottom: 18, borderColor: "#99f6e4", background: "#f0fdfa", color: "#115e59" }}>
+          {feedback}
+          <button type="button" onClick={() => setFeedback("")} aria-label="Fechar mensagem" style={{ float: "right", border: 0, background: "transparent", cursor: "pointer", fontSize: 18 }}>×</button>
+        </div>
+      )}
+
+      <section aria-label="Resumo das contas" style={{ marginBottom: 26 }}>
+        <div style={{ marginBottom: 14 }}>
+          <span style={{ color: "#0f766e", fontSize: 10, fontWeight: 800, letterSpacing: 1.4 }}>VISÃO GERAL</span>
+          <h2 style={{ margin: "4px 0", fontSize: 21, letterSpacing: "-0.02em" }}>Resumo das suas contas</h2>
+          <p style={{ margin: 0, color: "var(--muted, #64748b)", fontSize: 13, lineHeight: 1.5 }}>
+            Veja o total pendente, o que está atrasado, o que ainda vai vencer, o que já foi pago e as receitas.
+          </p>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 14 }}>
+          {[
+            {
+              title: "Total geral em aberto",
+              value: money(openTotal),
+              description: "Todos os compromissos pendentes, de todas as categorias",
+              accent: "#0f766e",
+              background: "#f0fdfa",
+              icon: "▤",
+            },
+            {
+              title: "Total em atraso",
+              value: money(overdueTotal),
+              description: overdueCount === 1 ? "1 compromisso vencido e não pago" : `${overdueCount} compromissos vencidos e não pagos`,
+              accent: "#b91c1c",
+              background: "#fef2f2",
+              icon: "!",
+            },
+            {
+              title: "Total a vencer",
+              value: money(upcomingTotal),
+              description: "Pendências com vencimento hoje ou em data futura",
+              accent: "#b45309",
+              background: "#fffbeb",
+              icon: "◷",
+            },
+            {
+              title: "Total já pago",
+              value: money(paidTotal),
+              description: "Compromissos marcados como pagos",
+              accent: "#15803d",
+              background: "#f0fdf4",
+              icon: "✓",
+            },
+            {
+              title: "Total de receitas",
+              value: money(incomeTotal),
+              description: "Receitas cadastradas, exceto canceladas",
+              accent: "#1d4ed8",
+              background: "#eff6ff",
+              icon: "↗",
+            },
+          ].map((card) => (
+            <article
+              key={card.title}
+              style={{
+                minWidth: 0,
+                padding: "18px 18px 17px",
+                border: "1px solid var(--border, #e2e8f0)",
+                borderTop: `4px solid ${card.accent}`,
+                borderRadius: 16,
+                background: "var(--card, #fff)",
+                boxShadow: "0 6px 20px rgba(15, 23, 42, 0.045)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span aria-hidden="true" style={{
+                  display: "grid",
+                  placeItems: "center",
+                  flexShrink: 0,
+                  width: 36,
+                  height: 36,
+                  borderRadius: 12,
+                  background: card.background,
+                  color: card.accent,
+                  fontSize: 18,
+                  fontWeight: 900,
+                }}>{card.icon}</span>
+                <span style={{ color: "var(--muted, #64748b)", fontSize: 13, fontWeight: 700 }}>{card.title}</span>
+              </div>
+              <div style={{ marginTop: 15, fontSize: "clamp(23px, 3vw, 29px)", fontWeight: 850, letterSpacing: "-0.035em", color: "var(--foreground, #172033)", overflowWrap: "anywhere" }}>
+                {card.value}
+              </div>
+              <p style={{ margin: "7px 0 0", color: "var(--muted, #64748b)", fontSize: 12, lineHeight: 1.5 }}>
+                {card.description}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section
+        id="nova-conta"
+        style={{
+          ...cardStyle,
+          marginBottom: 18,
+          padding: "clamp(14px, 2vw, 22px)",
+          borderRadius: 20,
+          boxShadow: "0 8px 28px rgba(15, 23, 42, 0.05)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 16 }}>
+          <div
+            aria-hidden="true"
+            style={{
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+              width: 40,
+              height: 40,
+              borderRadius: 14,
+              background: "#ccfbf1",
+              color: "#0f766e",
+              fontSize: 21,
+              fontWeight: 800,
+            }}
+          >
+            +
+          </div>
+          <div>
+            <span style={{ color: "#0f766e", fontSize: 10, fontWeight: 800, letterSpacing: 1 }}>
+              ORGANIZE SUA ROTINA
+            </span>
+            <h2 style={{ margin: "3px 0 5px", fontSize: "clamp(18px, 2.5vw, 22px)", lineHeight: 1.25 }}>
+              Cadastrar conta ou movimentação
+            </h2>
+            <p style={{ margin: 0, color: "var(--muted, #64748b)", fontSize: 13, lineHeight: 1.45 }}>
+              Registre contas de consumo, cartões, assinaturas, despesas e receitas do dia a dia.
+              O cadastro de dívidas continua separado em Minhas dívidas.
+            </p>
+          </div>
+        </div>
+
+        <form
+          onSubmit={addAccount}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
+            gap: 12,
+            alignItems: "start",
+          }}
+        >
+          <label style={{ display: "grid", gap: 6, fontSize: 12, fontWeight: 700, minWidth: 0 }}>
+            Descrição <span style={{ color: "#dc2626" }}>*</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ex.: Conta de água"
+              maxLength={120}
+              autoComplete="off"
+              required
+              style={{ ...fieldStyle, minHeight: 42 }}
+            />
+            <span style={{ color: "var(--muted, #64748b)", fontSize: 11, fontWeight: 400 }}>
+              Dê um nome fácil de identificar.
+            </span>
+          </label>
+
+          <label style={{ display: "grid", gap: 6, fontSize: 12, fontWeight: 700, minWidth: 0 }}>
+            Categoria <span style={{ color: "#dc2626" }}>*</span>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as AccountType)}
+              required
+              style={{ ...fieldStyle, minHeight: 42 }}
+            >
+              {Object.entries(typeLabels).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <span style={{ color: "var(--muted, #64748b)", fontSize: 11, fontWeight: 400 }}>
+              Escolha o tipo que melhor descreve o registro.
+            </span>
+          </label>
+
+          <label style={{ display: "grid", gap: 6, fontSize: 12, fontWeight: 700, minWidth: 0 }}>
+            Valor (R$) <span style={{ color: "#dc2626" }}>*</span>
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              inputMode="decimal"
+              placeholder="0,00"
+              required
+              style={{ ...fieldStyle, minHeight: 42 }}
+            />
+            <span style={{ color: "var(--muted, #64748b)", fontSize: 11, fontWeight: 400 }}>
+              Informe um valor maior que zero.
+            </span>
+          </label>
+
+          <label style={{ display: "grid", gap: 6, fontSize: 12, fontWeight: 700, minWidth: 0 }}>
+            Vencimento
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              style={{ ...fieldStyle, minHeight: 42 }}
+            />
+            <span style={{ color: "var(--muted, #64748b)", fontSize: 11, fontWeight: 400 }}>
+              Opcional para registros sem data de vencimento.
+            </span>
+          </label>
+
+          <label style={{ display: "grid", gap: 6, fontSize: 12, fontWeight: 700, minWidth: 0, gridColumn: "1 / -1" }}>
+            Observações
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              maxLength={500}
+              rows={2}
+              placeholder="Ex.: referência, estabelecimento ou informação importante (opcional)"
+              style={{
+                ...fieldStyle,
+                minHeight: 68,
+                resize: "vertical",
+                fontFamily: "inherit",
+                lineHeight: 1.5,
+              }}
+            />
+            <span style={{ color: "var(--muted, #64748b)", fontSize: 11, fontWeight: 400 }}>
+              Até 500 caracteres. Não informe senhas ou dados bancários sigilosos.
+            </span>
+          </label>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              gridColumn: "1 / -1",
+              paddingTop: 12,
+              borderTop: "1px solid var(--border, #e2e8f0)",
+            }}
+          >
+            <p style={{ margin: 0, color: "var(--muted, #64748b)", fontSize: 12, lineHeight: 1.5 }}>
+              <span style={{ color: "#dc2626" }}>*</span> Campos obrigatórios. O registro será salvo nas suas contas.
+            </p>
+            <button
+              disabled={saving}
+              type="submit"
+              style={{
+                border: 0,
+                borderRadius: 12,
+                padding: "11px 18px",
+                minHeight: 44,
+                background: saving ? "#94a3b8" : "#0f766e",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 14,
+                cursor: saving ? "wait" : "pointer",
+                boxShadow: saving ? "none" : "0 4px 10px rgba(15, 118, 110, 0.18)",
+                width: "100%",
+                maxWidth: 260,
+              }}
+            >
+              {saving ? "Salvando..." : "＋ Adicionar registro"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section style={{ ...cardStyle, overflow: "hidden" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: "-0.025em" }}>Suas movimentações</h2>
+            <p style={{ margin: "6px 0 0", color: "var(--muted, #64748b)", fontSize: 13, lineHeight: 1.6 }}>Consulte vencimentos e atualize a situação de cada registro.</p>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700 }}>
+            Filtrar
+            <select aria-label="Filtrar movimentações" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ ...fieldStyle, width: "auto", minWidth: 170, maxWidth: "100%", minHeight: 42, borderRadius: 10 }}>
+              <option value="todas">Todas</option>
+              <option value="pendente">Em aberto</option>
+              <option value="vencida">Vencidas</option>
+              <option value="hoje">Vencem hoje</option>
+              <option value="pago">Pagas</option>
+              <option value="receita">Receitas</option>
+              <option value="despesa">Despesas e contas</option>
+            </select>
+          </label>
+        </div>
+
+        {loading ? <p>Carregando suas contas...</p> : visibleItems.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "36px 12px", color: "var(--muted, #64748b)" }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>▤</div>
+            <strong style={{ color: "var(--foreground, #172033)" }}>Nenhuma conta encontrada</strong>
+            <p style={{ marginBottom: 0 }}>Cadastre uma conta acima ou selecione outro filtro.</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto", border: "1px solid var(--border, #e2e8f0)", borderRadius: 14 }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13, minWidth: 700 }}>
+              <thead>
+                <tr style={{ textAlign: "left", background: "var(--surface, #f1f5f9)" }}>
+                  {["Descrição", "Tipo", "Vencimento", "Valor", "Situação", "Ações"].map((label) => (
+                    <th key={label} style={{ padding: "14px 12px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap", color: "var(--muted, #475569)", fontSize: 11, fontWeight: 800, letterSpacing: ".045em", textTransform: "uppercase" }}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleItems.map((item) => {
+                  const overdue = item.status === "pendente" && !!item.due_date && item.due_date < today();
+                  const dueToday = item.status === "pendente" && item.due_date === today();
+                  const statusText = item.status === "pago" ? "Paga" : item.status === "cancelado" ? "Cancelada" : overdue ? "Vencida" : dueToday ? "Vence hoje" : "Em aberto";
+                  const statusColor = item.status === "pago" ? "#047857" : item.status === "cancelado" ? "#64748b" : overdue ? "#b91c1c" : dueToday ? "#c2410c" : "#1d4ed8";
+                  const statusBg = item.status === "pago" ? "#d1fae5" : item.status === "cancelado" ? "#e2e8f0" : overdue ? "#fee2e2" : dueToday ? "#ffedd5" : "#dbeafe";
+                  return (
+                    <tr key={item.id} style={{ background: "var(--background, #fff)" }}>
+                      <td style={{ padding: "15px 12px", borderBottom: "1px solid var(--border, #e2e8f0)", verticalAlign: "middle" }}>
+                        <strong style={{ display: "block", color: "var(--foreground, #172033)", fontSize: 14, overflowWrap: "anywhere" }}>{item.name}</strong>
+                        {item.notes && <div style={{ marginTop: 4, color: "var(--muted, #64748b)", fontSize: 12 }}>{item.notes}</div>}
+                      </td>
+                      <td style={{ padding: "15px 12px", borderBottom: "1px solid var(--border, #e2e8f0)", verticalAlign: "middle", whiteSpace: "nowrap" }}>{typeLabels[item.account_type]}</td>
+                      <td style={{ padding: "15px 12px", borderBottom: "1px solid var(--border, #e2e8f0)", verticalAlign: "middle", whiteSpace: "nowrap" }}>{dateLabel(item.due_date)}</td>
+                      <td style={{ padding: "15px 12px", borderBottom: "1px solid var(--border, #e2e8f0)", verticalAlign: "middle", whiteSpace: "nowrap", fontWeight: 700 }}>{money(Number(item.amount))}</td>
+                      <td style={{ padding: "15px 12px", borderBottom: "1px solid var(--border, #e2e8f0)", verticalAlign: "middle" }}>
+                        <span style={{ display: "inline-block", borderRadius: 999, padding: "5px 9px", color: statusColor, background: statusBg, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>{statusText}</span>
+                      </td>
+                      <td style={{ padding: "15px 12px", borderBottom: "1px solid var(--border, #e2e8f0)", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                        {item.status !== "cancelado" && (
+                          <button type="button" disabled={actionId === item.id} onClick={() => void togglePaid(item)} style={{ border: 0, background: "transparent", color: item.status === "pago" ? "#475569" : "#047857", fontWeight: 800, cursor: "pointer", padding: "5px 4px" }}>
+                            {item.status === "pago" ? "Reabrir" : "Marcar paga"}
+                          </button>
+                        )}
+                        <button type="button" disabled={actionId === item.id} onClick={() => void deleteAccount(item)} style={{ border: 0, background: "transparent", color: "#b91c1c", fontWeight: 800, cursor: "pointer", padding: "5px 4px", marginLeft: 6 }}>
+                          Excluir
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: "var(--surface, #f1f5f9)", fontWeight: 800 }}>
+                  <td colSpan={3} style={{ padding: "14px 12px", borderTop: "2px solid var(--border, #cbd5e1)" }}>
+                    TOTAL — {visibleItems.length} registro(s)
+                  </td>
+                  <td style={{ padding: "14px 12px", borderTop: "2px solid var(--border, #cbd5e1)", whiteSpace: "nowrap" }}>
+                    {money(visibleItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))}
+                  </td>
+                  <td colSpan={2} style={{ padding: "14px 12px", borderTop: "2px solid var(--border, #cbd5e1)", lineHeight: 1.8 }}>
+                    <div>
+                      Pago: {money(visibleItems.reduce((sum, item) =>
+                        sum + (item.status === "pago"
+                          ? Number(item.amount) || 0 : 0), 0))}
+                    </div>
+                    <div style={{ color: "#b91c1c" }}>
+                      Falta pagar: {money(visibleItems.reduce((sum, item) =>
+                        sum + (item.status === "pendente" && item.account_type !== "receita"
+                          ? Number(item.amount) || 0 : 0), 0))}
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}

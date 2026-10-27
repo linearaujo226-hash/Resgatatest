@@ -1,0 +1,49 @@
+Perfeito! 💜 Então, na versão para celular do Resgata+, vamos tirar o menu da lateral e deixá-lo horizontal e fixo na tela, logo abaixo do cabeçalho. Assim, ele não ocupa mais espaço lateral nem fica por cima do conteúdo.
+
+A ideia é esta:
+
+### R+
+
+### resgata+
+
+Entrar
+
+Começar agora
+
+### ⌂
+
+Início
+
+### ◫
+
+Finanças
+
+### ▤
+
+Dívidas
+
+### ✳
+
+Hábitos
+
+RESGATA+ · SUA JORNADA COMEÇA AQUI
+
+### Sua vida pode avançar. Um passo de cada vez.
+
+Cuide das suas finanças, acompanhe suas dívidas e desenvolva hábitos melhores.
+
+Começar agora ↗
+
+Como ficará o comportamento:
+
+* Menu horizontal e fixo, abaixo do cabeçalho, sempre acessível ao rolar a página.
+
+* Sem barra lateral no celular.
+
+* Cabeçalho com o logo à esquerda e os botões à direita.
+
+* Conteúdo ajustado à largura do celular, sem sobreposições.
+
+* No computador, podemos manter o layout atual, se você quiser.
+
+Isso é uma prévia de como ficará, ainda não é uma alteração aplicada ao site. Para eu preparar o código correto, me envie o link do repositório GitHub ou o código dos arquivos do menu e do cabeçalho.

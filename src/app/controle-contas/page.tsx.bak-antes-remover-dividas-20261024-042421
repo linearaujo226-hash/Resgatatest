@@ -1,0 +1,445 @@
+"use client";
+
+import AppHeader from "@/components/AppHeader";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+
+type AccountType = "conta" | "cartao" | "assinatura" | "despesa" | "receita" | "outro";
+type AccountStatus = "pendente" | "pago" | "cancelado";
+
+type DebtSummary = {
+  id: string;
+  name: string;
+  creditor: string;
+  amount: number;
+  paid_amount: number | null;
+  due_date: string;
+  status: string;
+};
+
+type ControlAccount = {
+  id: string;
+  user_id: string;
+  name: string;
+  account_type: AccountType;
+  amount: number;
+  due_date: string | null;
+  status: AccountStatus;
+  paid_at: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+const typeLabels: Record<AccountType, string> = {
+  conta: "Conta de consumo",
+  cartao: "Cartão",
+  assinatura: "Assinatura",
+  despesa: "Despesa",
+  receita: "Receita",
+  outro: "Outro",
+};
+
+const money = (value: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+
+const today = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+const dateLabel = (value: string | null) =>
+  value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : "—";
+
+export default function ControleContasPage() {
+  const router = useRouter();
+  const [items, setItems] = useState<ControlAccount[]>([]);
+  const [debts, setDebts] = useState<DebtSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState("");
+  const [filter, setFilter] = useState("todas");
+  const [name, setName] = useState("");
+  const [type, setType] = useState<AccountType>("conta");
+  const [amount, setAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const refresh = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data: auth, error: authError } = await supabase.auth.getUser();
+    if (authError) throw authError;
+    if (!auth.user) {
+      router.replace("/login");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("control_accounts")
+      .select("*")
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    setItems((data ?? []) as ControlAccount[]);
+
+    const { data: debtData, error: debtError } = await supabase
+      .from("debts")
+      .select("id, name, creditor, amount, paid_amount, due_date, status")
+      .order("due_date", { ascending: true });
+
+    if (debtError) throw debtError;
+    setDebts((debtData ?? []) as DebtSummary[]);
+  }, [router]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        await refresh();
+      } catch (error) {
+        if (active) setFeedback(error instanceof Error ? error.message : "Não foi possível carregar as contas.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [refresh]);
+
+  const visibleItems = useMemo(() => {
+    const date = today();
+    return items.filter((item) => {
+      if (filter === "pendente") return item.status === "pendente";
+      if (filter === "vencida") return item.status === "pendente" && !!item.due_date && item.due_date < date;
+      if (filter === "hoje") return item.status === "pendente" && item.due_date === date;
+      if (filter === "pago") return item.status === "pago";
+      if (filter === "receita") return item.account_type === "receita";
+      if (filter === "despesa") return item.account_type !== "receita";
+      return true;
+    });
+  }, [items, filter]);
+
+  const openTotal = items
+    .filter((item) => item.status === "pendente" && item.account_type !== "receita")
+    .reduce((sum, item) => sum + Number(item.amount), 0);
+  const incomeTotal = items
+    .filter((item) => item.account_type === "receita" && item.status !== "cancelado")
+    .reduce((sum, item) => sum + Number(item.amount), 0);
+  const overdueCount = items.filter(
+    (item) => item.status === "pendente" && !!item.due_date && item.due_date < today()
+  ).length;
+
+  async function addAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFeedback("");
+    const numericAmount = Number(amount.replace(",", "."));
+    if (!name.trim()) {
+      setFeedback("Informe a descrição da conta.");
+      return;
+    }
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setFeedback("Informe um valor maior que zero.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const { error } = await supabase.from("control_accounts").insert({
+        user_id: auth.user.id,
+        name: name.trim(),
+        account_type: type,
+        amount: numericAmount,
+        due_date: dueDate || null,
+        notes: notes.trim() || null,
+      });
+      if (error) throw error;
+
+      setName("");
+      setType("conta");
+      setAmount("");
+      setDueDate("");
+      setNotes("");
+      await refresh();
+      setFeedback("Conta cadastrada com sucesso.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível cadastrar a conta.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function togglePaid(item: ControlAccount) {
+    setActionId(item.id);
+    setFeedback("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const nextStatus: AccountStatus = item.status === "pago" ? "pendente" : "pago";
+      const { error } = await supabase
+        .from("control_accounts")
+        .update({ status: nextStatus, paid_at: nextStatus === "pago" ? today() : null, updated_at: new Date().toISOString() })
+        .eq("id", item.id)
+        .eq("user_id", auth.user.id);
+      if (error) throw error;
+      await refresh();
+      setFeedback(nextStatus === "pago" ? "Conta marcada como paga." : "Conta voltou para em aberto.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível atualizar a conta.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function deleteAccount(item: ControlAccount) {
+    if (!window.confirm(`Excluir "${item.name}"? Esta ação não pode ser desfeita.`)) return;
+    setActionId(item.id);
+    setFeedback("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+      const { error } = await supabase
+        .from("control_accounts")
+        .delete()
+        .eq("id", item.id)
+        .eq("user_id", auth.user.id);
+      if (error) throw error;
+      await refresh();
+      setFeedback("Conta excluída.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível excluir a conta.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  const cardStyle = {
+    background: "var(--card, #fff)",
+    border: "1px solid var(--border, #e2e8f0)",
+    borderRadius: 16,
+    padding: 18,
+    minWidth: 0,
+  } as const;
+  const fieldStyle = {
+    width: "100%",
+    boxSizing: "border-box" as const,
+    border: "1px solid var(--border, #dbe3ec)",
+    borderRadius: 10,
+    padding: "11px 12px",
+    background: "var(--input, #fff)",
+    color: "var(--foreground, #172033)",
+    fontSize: 14,
+  };
+
+  return (
+    <main className="container page" style={{ maxWidth: 1240 }}>
+      <AppHeader />
+      <header style={{ display: "flex", flexWrap: "wrap", gap: 18, alignItems: "center", justifyContent: "space-between", margin: "28px 0" }}>
+        <div>
+          <span style={{ color: "#0d9488", fontSize: 12, fontWeight: 800, letterSpacing: 1.5 }}>ORGANIZAÇÃO DO DIA A DIA</span>
+          <h1 style={{ fontSize: "clamp(28px, 4vw, 38px)", margin: "8px 0" }}>Controle de contas</h1>
+          <p style={{ margin: 0, color: "var(--muted, #64748b)" }}>Contas, cartões, assinaturas, despesas e receitas em um só lugar.</p>
+        </div>
+        <a href="#nova-conta" style={{ textDecoration: "none", borderRadius: 12, background: "#0f766e", color: "#fff", padding: "12px 17px", fontWeight: 700 }}>＋ Nova conta</a>
+      </header>
+
+      {feedback && (
+        <div role="status" style={{ ...cardStyle, marginBottom: 18, borderColor: "#99f6e4", background: "#f0fdfa", color: "#115e59" }}>
+          {feedback}
+          <button type="button" onClick={() => setFeedback("")} aria-label="Fechar mensagem" style={{ float: "right", border: 0, background: "transparent", cursor: "pointer", fontSize: 18 }}>×</button>
+        </div>
+      )}
+
+      <section aria-label="Resumo das contas" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 24 }}>
+        <article style={{ ...cardStyle, borderTop: "4px solid #0d9488" }}>
+          <span style={{ color: "var(--muted, #64748b)", fontSize: 13 }}>Contas em aberto</span>
+          <div style={{ fontSize: 25, fontWeight: 800, marginTop: 8 }}>{money(openTotal)}</div>
+        </article>
+        <article style={{ ...cardStyle, borderTop: "4px solid #dc2626" }}>
+          <span style={{ color: "var(--muted, #64748b)", fontSize: 13 }}>Contas vencidas</span>
+          <div style={{ fontSize: 25, fontWeight: 800, marginTop: 8 }}>{overdueCount}</div>
+        </article>
+        <article style={{ ...cardStyle, borderTop: "4px solid #2563eb" }}>
+          <span style={{ color: "var(--muted, #64748b)", fontSize: 13 }}>Receitas cadastradas</span>
+          <div style={{ fontSize: 25, fontWeight: 800, marginTop: 8 }}>{money(incomeTotal)}</div>
+        </article>
+      </section>
+
+      <section aria-label="Histórico de dívidas" style={{ ...cardStyle, marginBottom: 24 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20 }}>Dívidas e histórico</h2>
+            <p style={{ margin: "5px 0 0", color: "var(--muted, #64748b)", fontSize: 13 }}>
+              Dados originais das suas dívidas, sem criar cópias.
+            </p>
+          </div>
+          <a href="/dividas" style={{ color: "#0f766e", fontWeight: 800 }}>Gerenciar dívidas antigas ↗</a>
+        </div>
+        {loading ? <p>Carregando dívidas...</p> : debts.length === 0 ? (
+          <p style={{ color: "var(--muted, #64748b)" }}>Nenhuma dívida cadastrada. Você pode continuar organizando suas contas abaixo.</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 700 }}>
+              <thead>
+                <tr style={{ textAlign: "left", background: "var(--surface, #f8fafc)" }}>
+                  {["Dívida", "Credor", "Vencimento", "Valor original", "Já pago", "Saldo restante", "Situação"].map((label) => (
+                    <th key={label} style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap" }}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {debts.map((debt) => {
+                  const original = Math.max(0, Number(debt.amount) || 0);
+                  const paid = Math.min(original, Math.max(0, Number(debt.paid_amount) || 0));
+                  const remaining = Math.max(0, original - paid);
+                  const overdue = remaining > 0 && !!debt.due_date && debt.due_date < today();
+                  const label = remaining <= 0 ? "Paga" : overdue ? "Vencida" : "Em aberto";
+                  const color = remaining <= 0 ? "#047857" : overdue ? "#b91c1c" : "#1d4ed8";
+                  const bg = remaining <= 0 ? "#d1fae5" : overdue ? "#fee2e2" : "#dbeafe";
+                  return (
+                    <tr key={debt.id}>
+                      <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)" }}><strong>{debt.name}</strong></td>
+                      <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)" }}>{debt.creditor || "—"}</td>
+                      <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap" }}>{dateLabel(debt.due_date)}</td>
+                      <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap" }}>{money(original)}</td>
+                      <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap" }}>{money(paid)}</td>
+                      <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap", fontWeight: 800 }}>{money(remaining)}</td>
+                      <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)" }}>
+                        <span style={{ display: "inline-block", borderRadius: 999, padding: "5px 9px", color, background: bg, fontSize: 12, fontWeight: 800 }}>{label}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section id="nova-conta" style={{ ...cardStyle, marginBottom: 24 }}>
+        <h2 style={{ marginTop: 0, fontSize: 20 }}>Cadastrar conta ou movimentação</h2>
+        <form onSubmit={addAccount} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14, alignItems: "end" }}>
+          <label style={{ display: "grid", gap: 7, fontSize: 13, fontWeight: 700 }}>
+            Descrição
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Conta de água" maxLength={120} required style={fieldStyle} />
+          </label>
+          <label style={{ display: "grid", gap: 7, fontSize: 13, fontWeight: 700 }}>
+            Tipo
+            <select value={type} onChange={(e) => setType(e.target.value as AccountType)} style={fieldStyle}>
+              {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label style={{ display: "grid", gap: 7, fontSize: 13, fontWeight: 700 }}>
+            Valor (R$)
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="0,00" required style={fieldStyle} />
+          </label>
+          <label style={{ display: "grid", gap: 7, fontSize: 13, fontWeight: 700 }}>
+            Vencimento (opcional)
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={fieldStyle} />
+          </label>
+          <label style={{ display: "grid", gap: 7, fontSize: 13, fontWeight: 700 }}>
+            Observação (opcional)
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} placeholder="Referência ou detalhe" style={fieldStyle} />
+          </label>
+          <button disabled={saving} type="submit" style={{ border: 0, borderRadius: 10, padding: "12px 16px", background: saving ? "#94a3b8" : "#0f766e", color: "#fff", fontWeight: 800, cursor: saving ? "wait" : "pointer" }}>
+            {saving ? "Salvando..." : "Adicionar conta"}
+          </button>
+        </form>
+      </section>
+
+      <section style={cardStyle}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20 }}>Suas movimentações</h2>
+            <p style={{ margin: "5px 0 0", color: "var(--muted, #64748b)", fontSize: 13 }}>Consulte vencimentos e atualize a situação de cada registro.</p>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700 }}>
+            Filtrar
+            <select value={filter} onChange={(e) => setFilter(e.target.value)} style={{ ...fieldStyle, width: "auto", minWidth: 150 }}>
+              <option value="todas">Todas</option>
+              <option value="pendente">Em aberto</option>
+              <option value="vencida">Vencidas</option>
+              <option value="hoje">Vencem hoje</option>
+              <option value="pago">Pagas</option>
+              <option value="receita">Receitas</option>
+              <option value="despesa">Despesas e contas</option>
+            </select>
+          </label>
+        </div>
+
+        {loading ? <p>Carregando suas contas...</p> : visibleItems.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "36px 12px", color: "var(--muted, #64748b)" }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>▤</div>
+            <strong style={{ color: "var(--foreground, #172033)" }}>Nenhuma conta encontrada</strong>
+            <p style={{ marginBottom: 0 }}>Cadastre uma conta acima ou selecione outro filtro.</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 680 }}>
+              <thead>
+                <tr style={{ textAlign: "left", background: "var(--surface, #f8fafc)" }}>
+                  {["Descrição", "Tipo", "Vencimento", "Valor", "Situação", "Ações"].map((label) => (
+                    <th key={label} style={{ padding: "12px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap" }}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleItems.map((item) => {
+                  const overdue = item.status === "pendente" && !!item.due_date && item.due_date < today();
+                  const dueToday = item.status === "pendente" && item.due_date === today();
+                  const statusText = item.status === "pago" ? "Paga" : item.status === "cancelado" ? "Cancelada" : overdue ? "Vencida" : dueToday ? "Vence hoje" : "Em aberto";
+                  const statusColor = item.status === "pago" ? "#047857" : item.status === "cancelado" ? "#64748b" : overdue ? "#b91c1c" : dueToday ? "#c2410c" : "#1d4ed8";
+                  const statusBg = item.status === "pago" ? "#d1fae5" : item.status === "cancelado" ? "#e2e8f0" : overdue ? "#fee2e2" : dueToday ? "#ffedd5" : "#dbeafe";
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ padding: "13px 10px", borderBottom: "1px solid var(--border, #e2e8f0)" }}>
+                        <strong>{item.name}</strong>
+                        {item.notes && <div style={{ marginTop: 4, color: "var(--muted, #64748b)", fontSize: 12 }}>{item.notes}</div>}
+                      </td>
+                      <td style={{ padding: "13px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap" }}>{typeLabels[item.account_type]}</td>
+                      <td style={{ padding: "13px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap" }}>{dateLabel(item.due_date)}</td>
+                      <td style={{ padding: "13px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap", fontWeight: 700 }}>{money(Number(item.amount))}</td>
+                      <td style={{ padding: "13px 10px", borderBottom: "1px solid var(--border, #e2e8f0)" }}>
+                        <span style={{ display: "inline-block", borderRadius: 999, padding: "5px 9px", color: statusColor, background: statusBg, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>{statusText}</span>
+                      </td>
+                      <td style={{ padding: "13px 10px", borderBottom: "1px solid var(--border, #e2e8f0)", whiteSpace: "nowrap" }}>
+                        {item.status !== "cancelado" && (
+                          <button type="button" disabled={actionId === item.id} onClick={() => void togglePaid(item)} style={{ border: 0, background: "transparent", color: item.status === "pago" ? "#475569" : "#047857", fontWeight: 800, cursor: "pointer", padding: "5px 4px" }}>
+                            {item.status === "pago" ? "Reabrir" : "Marcar paga"}
+                          </button>
+                        )}
+                        <button type="button" disabled={actionId === item.id} onClick={() => void deleteAccount(item)} style={{ border: 0, background: "transparent", color: "#b91c1c", fontWeight: 800, cursor: "pointer", padding: "5px 4px", marginLeft: 6 }}>
+                          Excluir
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}

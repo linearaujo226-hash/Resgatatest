@@ -1,0 +1,1191 @@
+
+"use client";
+import AppHeader from "@/components/AppHeader";
+
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
+import type { Debt, DebtPriority } from "@/types";
+
+const money = (value: number) =>
+  Number(value).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+
+function localDate() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateLabel(value: string) {
+  if (!value) return "—";
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function errorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = String(error.message);
+    const code = "code" in error ? String(error.code) : "";
+
+    if (code === "23502") {
+      return "Há um campo obrigatório vazio. Confira o nome, credor, valor e vencimento.";
+    }
+    if (code === "23503") {
+      return "Não foi possível vincular a dívida à sua conta. Saia e entre novamente.";
+    }
+    if (code === "23514") {
+      return "Um dos valores informados não é permitido. Confira a categoria, prioridade e valor.";
+    }
+    if (code === "42501" || code === "PGRST301") {
+      return "O banco bloqueou esta operação por segurança. Confira sua sessão e as permissões da conta.";
+    }
+
+    return message;
+  }
+
+  return "Não foi possível concluir a operação. Tente novamente.";
+}
+
+type Feedback = { type: "success" | "error"; message: string };
+
+type Wallet = {
+  id: string;
+  name: string;
+  account_type: string;
+  balance: number | string;
+};
+
+export default function DebtsPage() {
+  const router = useRouter();
+
+  const [items, setItems] = useState<Debt[]>([]);
+  const [name, setName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [category, setCategory] = useState("outra");
+  const [priority, setPriority] = useState<DebtPriority>("normal");
+
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [filter, setFilter] = useState("todas");
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [selectedWallet, setSelectedWallet] = useState("");
+
+  const refresh = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data: auth, error: authError } = await supabase.auth.getUser();
+
+    if (authError) throw authError;
+
+    if (!auth.user) {
+      router.replace("/login");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("debts")
+      .select("*")
+      .order("due_date", { ascending: true });
+
+    if (error) throw error;
+
+    setItems((data ?? []) as Debt[]);
+
+    const { data: walletData, error: walletError } = await supabase
+      .from("wallet_accounts")
+      .select("id,name,account_type,balance")
+      .eq("user_id", auth.user.id)
+      .order("created_at", { ascending: true });
+
+    if (walletError) throw walletError;
+    const loadedWallets = (walletData ?? []) as Wallet[];
+    setWallets(loadedWallets);
+    setSelectedWallet((current) =>
+      current && loadedWallets.some((wallet: Wallet) => wallet.id === current)
+        ? current
+        : loadedWallets[0]?.id ?? ""
+    );
+  }, [router]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      try {
+        await refresh();
+      } catch (error) {
+        if (active) {
+          setFeedback({ type: "error", message: errorMessage(error) });
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void load();
+
+    return () => {
+      active = false;
+    };
+  }, [refresh]);
+
+  const today = localDate();
+
+  const getStatus = useCallback(
+    (item: Debt) => {
+      const remaining = Math.max(
+        0,
+        Number(item.amount || 0) - Number(item.paid_amount || 0)
+      );
+      if (remaining <= 0) return "pago";
+      if (item.due_date < today) return "atrasado";
+      return "pendente";
+    },
+    [today]
+  );
+
+  const totals = useMemo(() => {
+    return items.reduce(
+      (result, item) => {
+        const value = Math.max(0, Number(item.amount) || 0);
+        const paid = Math.min(
+          value,
+          Math.max(0, Number(item.paid_amount) || 0)
+        );
+        const remaining = Math.max(0, value - paid);
+        const status =
+          remaining <= 0
+            ? "pago"
+            : item.due_date < today
+              ? "atrasado"
+              : "pendente";
+
+        result.paid += paid;
+
+        if (remaining > 0) {
+          result.open += remaining;
+          if (status === "atrasado") result.overdue += remaining;
+          else result.upcoming += remaining;
+        }
+
+        return result;
+      },
+      { open: 0, overdue: 0, upcoming: 0, paid: 0 }
+    );
+  }, [items, today]);
+
+  const reminderDebts = useMemo(() => {
+    return items
+      .map((item) => {
+        const amount = Math.max(0, Number(item.amount) || 0);
+        const paid = Math.min(
+          amount,
+          Math.max(0, Number(item.paid_amount) || 0)
+        );
+        const remaining = Math.max(0, amount - paid);
+
+        return { ...item, reminderRemaining: remaining };
+      })
+      .filter((item) => item.reminderRemaining > 0)
+      .sort((a, b) => a.due_date.localeCompare(b.due_date));
+  }, [items]);
+
+  const nextReminder = reminderDebts[0] ?? null;
+  const urgentReminder =
+    reminderDebts.find((item) => item.due_date <= today) ?? null;
+
+  const daysUntil = (dateValue: string) => {
+    const [year, month, day] = dateValue.slice(0, 10).split("-").map(Number);
+    const [todayYear, todayMonth, todayDay] = today.split("-").map(Number);
+    const due = new Date(year, month - 1, day);
+    const current = new Date(todayYear, todayMonth - 1, todayDay);
+
+    return Math.round((due.getTime() - current.getTime()) / 86400000);
+  };
+
+  const filteredItems = useMemo(() => {
+    if (filter === "todas") return items;
+    return items.filter((item) => getStatus(item) === filter);
+  }, [filter, getStatus, items]);
+
+  async function addDebt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFeedback(null);
+
+    const cleanName = name.trim();
+    const numericAmount = Number(amount);
+
+    if (!cleanName || !amount || !dueDate) {
+      setFeedback({
+        type: "error",
+        message: "Preencha o nome da dívida, o valor e o vencimento.",
+      });
+      return;
+    }
+
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setFeedback({
+        type: "error",
+        message: "Informe um valor maior que zero.",
+      });
+      return;
+    }
+
+    if (dueDate < "1900-01-01") {
+      setFeedback({
+        type: "error",
+        message: "Confira a data de vencimento.",
+      });
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const { error } = await supabase.from("debts").insert({
+        user_id: auth.user.id,
+        name: cleanName,
+        creditor: "Não informado",
+        amount: numericAmount,
+        due_date: dueDate,
+        category,
+        priority,
+        status: "pendente",
+      });
+
+      if (error) throw error;
+
+      setName("");
+      setAmount("");
+      setDueDate("");
+      setCategory("outra");
+      setPriority("normal");
+
+      await refresh();
+
+      setFeedback({
+        type: "success",
+        message: "Dívida cadastrada com sucesso.",
+      });
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message: `Não foi possível salvar a dívida: ${errorMessage(error)}`,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeDebt(item: Debt) {
+    const confirmed = window.confirm(
+      `Deseja excluir "${item.name}"? Esta ação não pode ser desfeita.`
+    );
+
+    if (!confirmed) return;
+
+    setFeedback(null);
+    setActionId(item.id);
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("debts")
+        .delete()
+        .eq("id", item.id)
+        .eq("user_id", auth.user.id);
+
+      if (error) throw error;
+
+      await refresh();
+      setFeedback({ type: "success", message: "Dívida excluída." });
+    } catch (error) {
+      setFeedback({ type: "error", message: errorMessage(error) });
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function toggleDebtPaid(item: Debt) {
+    setActionId(item.id);
+    setFeedback(null);
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+      if (!auth.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const nextReported = !Boolean(item.payment_reported);
+
+      const { data: updatedDebt, error: updateError } = await supabase
+        .from("debts")
+        .update({ payment_reported: nextReported })
+        .eq("id", item.id)
+        .eq("user_id", auth.user.id)
+        .select("id")
+        .maybeSingle();
+
+      if (updateError) throw updateError;
+      if (!updatedDebt) {
+        throw new Error("A situação não foi atualizada. Atualize a página e tente novamente.");
+      }
+
+      await refresh();
+      setFeedback({
+        type: "success",
+        message: nextReported
+          ? "Dívida marcada como paga. Nenhum lançamento financeiro foi criado."
+          : "Dívida reaberta. Os pagamentos registrados foram preservados.",
+      });
+    } catch (error) {
+      setFeedback({ type: "error", message: errorMessage(error) });
+    } finally {
+      setActionId(null);
+    }
+  }
+
+
+  const cardStyle = {
+    background: "var(--card, #ffffff)",
+    border: "1px solid var(--border, #e5eaf0)",
+    borderRadius: 18,
+    padding: 20,
+    minWidth: 0,
+  } as const;
+
+  const labelStyle = {
+    display: "block",
+    fontSize: 13,
+    fontWeight: 600,
+    marginBottom: 7,
+  } as const;
+
+  const inputStyle = {
+    width: "100%",
+    minWidth: 0,
+    boxSizing: "border-box" as const,
+    padding: "4px 5px",
+    borderRadius: 10,
+    border: "1px solid var(--border, #dbe2ea)",
+    background: "var(--input, #ffffff)",
+    color: "var(--foreground, #172033)",
+    fontSize: 14,
+  };
+
+  const statusLabel: Record<string, string> = {
+    pago: "Paga",
+    pendente: "Em aberto",
+    atrasado: "Vencida",
+  };
+
+  return (
+    <main className="container page" style={{ maxWidth: 1180 }}>
+      <AppHeader />
+
+
+
+      <header className="debts-hero">
+        <div className="debts-hero-copy">
+          <span className="debts-eyebrow">
+            <span className="debts-eyebrow-dot" />
+            ORGANIZAÇÃO FINANCEIRA
+          </span>
+          <h1>Minhas dívidas</h1>
+          <p>Organize seus compromissos, acompanhe os vencimentos e avance no seu ritmo.</p>
+        </div>
+
+        <div
+          aria-label="Lembretes de vencimentos"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+            gap: 9,
+            width: "100%",
+            maxWidth: 570,
+            flex: "1 1 420px",
+          }}
+        >
+          <a
+            href="#lista-dividas"
+            style={{
+              display: "block",
+              minWidth: 0,
+              padding: "4px 5px",
+              borderRadius: 16,
+              border: "1px solid #bae6fd",
+              background: "linear-gradient(135deg, #f0f9ff, #ffffff)",
+              color: "#0f172a",
+              textDecoration: "none",
+              boxShadow: "0 5px 18px rgba(14, 116, 144, 0.07)",
+            }}
+          >
+            <span style={{ display: "block", color: "#0369a1", fontSize: 11, fontWeight: 800, letterSpacing: ".06em" }}>
+              PRÓXIMA PENDÊNCIA
+            </span>
+            <strong style={{ display: "block", marginTop: 6, fontSize: 16, overflowWrap: "anywhere" }}>
+              {nextReminder ? nextReminder.name : "Tudo em dia!"}
+            </strong>
+            <span style={{ display: "block", marginTop: 5, color: "#475569", fontSize: 12 }}>
+              {nextReminder
+                ? `${money(nextReminder.reminderRemaining)} restantes · ${daysUntil(nextReminder.due_date) < 0
+                    ? `vencida há ${Math.abs(daysUntil(nextReminder.due_date))} dia(s)`
+                    : daysUntil(nextReminder.due_date) === 0
+                      ? "vence hoje"
+                      : daysUntil(nextReminder.due_date) === 1
+                        ? "vence amanhã"
+                        : `vence em ${daysUntil(nextReminder.due_date)} dias`}`
+                : "Nenhuma dívida em aberto"}
+            </span>
+            {nextReminder && (
+              <span style={{ display: "block", marginTop: 7, fontSize: 12, fontWeight: 700, color: "#0369a1" }}>
+                Vencimento: {dateLabel(nextReminder.due_date)} →
+              </span>
+            )}
+          </a>
+
+          <a
+            href="#lista-dividas"
+            style={{
+              display: "block",
+              minWidth: 0,
+              padding: "4px 5px",
+              borderRadius: 16,
+              border: urgentReminder ? "1px solid #fecaca" : "1px solid #a7f3d0",
+              background: urgentReminder
+                ? "linear-gradient(135deg, #fff1f2, #ffffff)"
+                : "linear-gradient(135deg, #ecfdf5, #ffffff)",
+              color: "#0f172a",
+              textDecoration: "none",
+              boxShadow: urgentReminder
+                ? "0 5px 18px rgba(220, 38, 38, 0.06)"
+                : "0 5px 18px rgba(5, 150, 105, 0.06)",
+            }}
+          >
+            <span style={{
+              display: "block",
+              color: urgentReminder ? "#b91c1c" : "#047857",
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: ".06em",
+            }}>
+              {urgentReminder ? "⚠ ATENÇÃO AOS VENCIMENTOS" : "✓ SITUAÇÃO DOS VENCIMENTOS"}
+            </span>
+            <strong style={{ display: "block", marginTop: 6, fontSize: 16, overflowWrap: "anywhere" }}>
+              {urgentReminder
+                ? urgentReminder.due_date < today ? "Você tem uma dívida vencida" : "Uma dívida vence hoje"
+                : reminderDebts.length
+                  ? "Nenhuma urgência hoje"
+                  : "Nenhuma pendência financeira"}
+            </strong>
+            <span style={{ display: "block", marginTop: 5, color: "#475569", fontSize: 12 }}>
+              {urgentReminder
+                ? `${urgentReminder.name} · ${money(urgentReminder.reminderRemaining)} em aberto`
+                : reminderDebts.length
+                  ? `${reminderDebts.length} dívida(s) aguardando pagamento`
+                  : "Seus compromissos cadastrados estão pagos"}
+            </span>
+            <span style={{
+              display: "block",
+              marginTop: 7,
+              fontSize: 12,
+              fontWeight: 700,
+              color: urgentReminder ? "#b91c1c" : "#047857",
+            }}>
+              {urgentReminder
+                ? `Vencimento: ${dateLabel(urgentReminder.due_date)} →`
+                : "Ver lista de dívidas →"}
+            </span>
+          </a>
+        </div>
+      </header>
+
+      {feedback && (
+        <div
+          role={feedback.type === "error" ? "alert" : "status"}
+          style={{
+            padding: "4px 5px",
+            borderRadius: 12,
+            marginBottom: 20,
+            border:
+              feedback.type === "error"
+                ? "1px solid #fecaca"
+                : "1px solid #a7f3d0",
+            background: feedback.type === "error" ? "#fef2f2" : "#ecfdf5",
+            color: feedback.type === "error" ? "#991b1b" : "#065f46",
+            overflowWrap: "anywhere",
+          }}
+        >
+          {feedback.message}
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            aria-label="Fechar mensagem"
+            style={{
+              float: "right",
+              border: 0,
+              background: "transparent",
+              cursor: "pointer",
+              color: "inherit",
+              fontSize: 18,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <section className="debts-summary" aria-label="Resumo financeiro">
+        <div className="debts-summary-heading">
+          <div>
+            <span className="debts-summary-kicker">VISÃO GERAL</span>
+            <h2>Resumo financeiro</h2>
+            <p>Acompanhe o que está em aberto e os pagamentos registrados.</p>
+          </div>
+        </div>
+
+        <div
+          className="debts-summary-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 225px), 1fr))",
+            gap: 16,
+          }}
+        >
+          {[
+            {
+              title: "Total em aberto",
+              value: totals.open,
+              description: "Compromissos não pagos",
+              accent: "teal",
+              icon: "▤",
+            },
+            {
+              title: "Valor vencido",
+              value: totals.overdue,
+              description: "Precisa de atenção",
+              accent: "red",
+              icon: "!",
+            },
+            {
+              title: "A vencer",
+              value: totals.upcoming,
+              description: "Próximos vencimentos",
+              accent: "blue",
+              icon: "◷",
+            },
+            {
+              title: "Valor pago",
+              value: totals.paid,
+              description: "Pagamentos registrados",
+              accent: "green",
+              icon: "✓",
+            },
+          ].map((card) => {
+            const palette = {
+              teal: {
+                background: "#102C35",
+                border: "#28505A",
+                iconBackground: "#214A50",
+                accent: "#72E3D0",
+                muted: "#A9C9CB",
+              },
+              red: {
+                background: "#351F28",
+                border: "#63313D",
+                iconBackground: "#58303A",
+                accent: "#FDA4AF",
+                muted: "#F2B9C2",
+              },
+              blue: {
+                background: "#1E293B",
+                border: "#3A4A63",
+                iconBackground: "#334563",
+                accent: "#93C5FD",
+                muted: "#CBD5E1",
+              },
+              green: {
+                background: "#17352B",
+                border: "#2D5A43",
+                iconBackground: "#28513F",
+                accent: "#86EFAC",
+                muted: "#B7D9C5",
+              },
+            }[card.accent] ?? {
+              background: "#102C35",
+              border: "#31515A",
+              iconBackground: "#244852",
+              accent: "#72E3D0",
+              muted: "#B8D7D5",
+            };
+
+            return (
+              <article
+                key={card.title}
+                className={`debts-summary-card debts-${card.accent}`}
+                style={{
+                  boxSizing: "border-box",
+                  minWidth: 0,
+                  minHeight: 150,
+                  padding: "4px 5px",
+                  borderRadius: 18,
+                  border: `1px solid ${palette.border}`,
+                  background: palette.background,
+                  color: "#FFFFFF",
+                  boxShadow: "0 8px 24px rgba(15, 23, 42, 0.10)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  transition: "transform 160ms ease, box-shadow 160ms ease",
+                }}
+              >
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                }}>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      flexShrink: 0,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 11,
+                      background: palette.iconBackground,
+                      color: palette.accent,
+                      fontSize: 20,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {card.icon}
+                  </span>
+                  <span style={{
+                    color: palette.accent,
+                    fontSize: 11,
+                    fontWeight: 800,
+                    letterSpacing: ".08em",
+                    textTransform: "uppercase",
+                    textAlign: "right",
+                  }}>
+                    {card.accent === "teal"
+                      ? "Visão geral"
+                      : card.accent === "red"
+                        ? "Atenção"
+                        : card.accent === "blue"
+                          ? "Planejamento"
+                          : "Concluído"}
+                  </span>
+                </div>
+
+                <div style={{ minWidth: 0 }}>
+                  <h3 style={{
+                    margin: 0,
+                    color: palette.muted,
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}>
+                    {card.title}
+                  </h3>
+                  <p style={{
+                    margin: "5px 0 0",
+                    color: "#FFFFFF",
+                    fontSize: "clamp(19px, 2vw, 24px)",
+                    lineHeight: 1.2,
+                    fontWeight: 800,
+                    letterSpacing: "-.035em",
+                    overflowWrap: "anywhere",
+                    fontVariantNumeric: "tabular-nums",
+                  }}>
+                    {money(card.value)}
+                  </p>
+                </div>
+
+                <p style={{
+                  margin: "auto 0 0",
+                  paddingTop: 7,
+                  borderTop: `1px solid ${palette.border}`,
+                  color: palette.muted,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}>
+                  {card.description}
+                </p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr)",
+          alignItems: "start",
+          gap: 24,
+          marginBottom: 28,
+        }}
+      >
+        <section
+          id="nova-divida"
+          style={{
+            ...cardStyle,
+            padding: "clamp(20px, 3vw, 30px)",
+            borderRadius: 22,
+            boxShadow: "0 12px 35px rgba(15, 23, 42, 0.055)",
+            scrollMarginTop: 24,
+          }}
+        >
+          <div style={{ marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, margin: "0 0 7px" }}>
+              Adicionar dívida
+            </h2>
+            <p
+              style={{
+                color: "var(--muted, #64748b)",
+                fontSize: 13,
+                lineHeight: 1.6,
+                margin: 0,
+              }}
+            >
+              Informe os dados para acompanhar este compromisso.
+            </p>
+          </div>
+
+          <form
+            onSubmit={addDebt}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
+              gap: 14,
+              alignItems: "start",
+            }}
+          >
+            <div>
+              <label htmlFor="debt-name" style={labelStyle}>Nome da dívida *</label>
+              <input
+                id="debt-name"
+                style={inputStyle}
+                required
+                maxLength={120}
+                placeholder="Ex.: Fatura do cartão"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="debt-amount" style={labelStyle}>Valor (R$) *</label>
+              <input
+                id="debt-amount"
+                style={inputStyle}
+                type="number"
+                min="0.01"
+                max="9999999999.99"
+                step="0.01"
+                inputMode="decimal"
+                required
+                placeholder="0,00"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="debt-date" style={labelStyle}>Vencimento *</label>
+              <input
+                id="debt-date"
+                style={inputStyle}
+                type="date"
+                required
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="debt-category" style={labelStyle}>Categoria *</label>
+              <select
+                id="debt-category"
+                style={inputStyle}
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+              >
+                <option value="outra">Outra dívida</option>
+                <option value="pessoal">Dívida pessoal / de boca</option>
+                <option value="boleto">Boleto</option>
+                <option value="cartao">Cartão</option>
+                <option value="emprestimo">Empréstimo</option>
+                <option value="conta">Conta atrasada</option>
+                <option value="financiamento">Financiamento</option>
+                <option value="acordo">Acordo / renegociação</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="debt-priority" style={labelStyle}>Prioridade *</label>
+              <select
+                id="debt-priority"
+                style={inputStyle}
+                value={priority}
+                onChange={(event) =>
+                  setPriority(event.target.value as DebtPriority)
+                }
+              >
+                <option value="baixa">Baixa</option>
+                <option value="normal">Normal</option>
+                <option value="alta">Alta</option>
+              </select>
+            </div>
+
+            <button
+              className="btn primary"
+              type="submit"
+              disabled={saving}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                gridColumn: "1 / -1",
+                padding: "4px 5px",
+                borderRadius: 12,
+                fontWeight: 750,
+                cursor: saving ? "wait" : "pointer",
+                minHeight: 48,
+                boxShadow: "0 5px 14px rgba(15, 118, 110, 0.15)",
+              }}
+            >
+              {saving ? "Salvando..." : "Salvar dívida"}
+            </button>
+
+            <p
+              style={{
+                color: "var(--muted, #64748b)",
+                fontSize: 12,
+                lineHeight: 1.6,
+                margin: 0,
+                gridColumn: "1 / -1",
+              }}
+            >
+              * Campos obrigatórios. Seus registros são protegidos pelas
+              permissões da sua conta.
+            </p>
+          </form>
+        </section>
+
+        <section
+          id="historico-dividas"
+          style={{
+            ...cardStyle,
+            minWidth: 0,
+            padding: "clamp(20px, 3vw, 30px)",
+            borderRadius: 22,
+            boxShadow: "0 12px 35px rgba(15, 23, 42, 0.055)",
+            scrollMarginTop: 24,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+              marginBottom: 18,
+            }}
+          >
+            <div>
+              <h2 style={{ fontSize: 20, margin: "0 0 6px" }}>Histórico</h2>
+              <p
+                style={{
+                  color: "var(--muted, #64748b)",
+                  fontSize: 13,
+                  margin: 0,
+                }}
+              >
+                {items.length} {items.length === 1 ? "registro" : "registros"}
+              </p>
+            </div>
+
+            <select
+              aria-label="Filtrar dívidas por situação"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              style={{ ...inputStyle, width: "auto", maxWidth: "100%" }}
+            >
+              <option value="todas">Todas</option>
+              <option value="pendente">Em aberto</option>
+              <option value="atrasado">Vencidas</option>
+              <option value="pago">Pagas</option>
+            </select>
+          </div>
+
+
+
+          {loading ? (
+            <div style={{ padding: "4px 5px", textAlign: "center" }}>
+              <p style={{ margin: 0 }}>Carregando suas dívidas...</p>
+            </div>
+          ) : filteredItems.length === 0 ? (
+            <div
+              style={{
+                padding: "4px 5px",
+                borderRadius: 14,
+                background: "var(--surface, #f8fafc)",
+                textAlign: "center",
+              }}
+            >
+              <div
+                aria-hidden="true"
+                style={{ fontSize: 30, marginBottom: 12 }}
+              >
+                {items.length === 0 ? "▤" : "⌕"}
+              </div>
+              <h3 style={{ fontSize: 16, margin: "0 0 8px" }}>
+                {items.length === 0
+                  ? "Nenhuma dívida cadastrada"
+                  : "Nenhum resultado neste filtro"}
+              </h3>
+              <p
+                style={{
+                  color: "var(--muted, #64748b)",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  margin: 0,
+                }}
+              >
+                {items.length === 0
+                  ? "Adicione sua primeira dívida para começar a acompanhar os valores."
+                  : "Escolha outra situação para visualizar seus registros."}
+              </p>
+            </div>
+          ) : (
+            <div style={{ width: "100%" }}>
+              <div id="lista-dividas" style={{ width: "100%", overflowX: "auto", border: "1px solid #f1f5f9", borderRadius: 8 }}>
+              <table style={{ width: "100%", minWidth: 700, tableLayout: "auto", borderCollapse: "collapse", fontSize: 11, lineHeight: 1.3 }}>
+                <thead>
+                  <tr style={{ background: "#334155", color: "#ffffff", textAlign: "left" }}>
+                    {["Dívida", "Tipo", "Valor", "Venc.", "Status", "Ações"].map((heading) => (
+                      <th key={heading} style={{ padding: "4px 5px", borderBottom: "1px solid #e8edf3", whiteSpace: "nowrap", fontSize: 11, lineHeight: 1.3, fontWeight: 800, color: "#ffffff" }}>{heading}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item) => {
+                    const status = getStatus(item);
+                    const amount = Math.max(0, Number(item.amount) || 0);
+                    const paid = Math.min(amount, Math.max(0, Number(item.paid_amount) || 0));
+                    const remaining = Math.max(0, amount - paid);
+                    const days = item.due_date
+                      ? Math.round((new Date(`${item.due_date}T12:00:00`).getTime() - new Date(`${today}T12:00:00`).getTime()) / 86400000)
+                      : null;
+
+                    let bg = "#f8fafc";
+                    let fg = "#334155";
+                    let statusText = statusLabel[status] ?? status;
+                    if (item.payment_reported) {
+                      statusText = "Pagamento confirmado manualmente";
+                    }
+
+                    if (status === "pago") {
+                      bg = "#dbeafe"; fg = "#1d4ed8"; statusText = "Paga";
+                    } else if (status === "atrasado") {
+                      bg = "#fee2e2"; fg = "#991b1b"; statusText = "Vencida";
+                    } else if (days !== null && days >= 5 && days <= 10) {
+                      bg = "#ffedd5"; fg = "#9a3412"; statusText = `Vence em ${days} dias`;
+                    } else if (days !== null && days >= 15 && days <= 20) {
+                      bg = "#fef9c3"; fg = "#854d0e"; statusText = `Vence em ${days} dias`;
+                    } else if (days !== null && days > 30) {
+                      bg = "#dcfce7"; fg = "#166534"; statusText = `Vence em ${days} dias`;
+                    } else if (days !== null && days >= 0 && days <= 4) {
+                      bg = "#f1f5f9"; fg = "#334155"; statusText = days === 0 ? "Vence hoje" : `Vence em ${days} dias`;
+                    } else if (days !== null && days >= 11 && days <= 14) {
+                      bg = "#f1f5f9"; fg = "#334155"; statusText = `Vence em ${days} dias`;
+                    } else if (days !== null && days >= 21 && days <= 30) {
+                      bg = "#f1f5f9"; fg = "#334155"; statusText = `Vence em ${days} dias`;
+                    }
+
+                    const categoryLabels: Record<string, string> = {
+                      pessoal: "Dívida pessoal",
+                      boleto: "Boleto",
+                      cartao: "Cartão",
+                      emprestimo: "Empréstimo",
+                      conta: "Conta atrasada",
+                      financiamento: "Financiamento",
+                      acordo: "Acordo",
+                      outra: "Outra",
+                    };
+
+                    return (
+                      <tr key={item.id} style={{ background: bg, color: fg, borderBottom: "1px solid #edf1f5" }}>
+                        <td style={{ padding: "4px 5px", minWidth: 180, maxWidth: 260, whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                          <strong style={{ fontSize: 12, fontWeight: 800 }}>
+                            {item.name
+                            .trim()
+                            .toLocaleLowerCase("pt-BR")
+                            .replace(/(^|[\s-])([\p{L}])/gu, (_, sep, letter) =>
+                              sep + letter.toLocaleUpperCase("pt-BR")
+                            )}
+                          </strong>
+                        </td>
+                        <td style={{ padding: "4px 5px", maxWidth: 110, overflowWrap: "anywhere" }}>{categoryLabels[item.category ?? "outra"] ?? item.category ?? "Outra"}</td>
+                        <td style={{ padding: "4px 5px", whiteSpace: "nowrap", fontWeight: 800 }}>{money(amount)}</td>
+                        <td style={{ padding: "4px 5px", whiteSpace: "nowrap" }}>{dateLabel(item.due_date).replace(/\/\d{4}$/, "")}</td>
+                        <td style={{ padding: "4px 5px", whiteSpace: "normal" }}>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
+                            <span style={{ display: "inline-block", padding: "2px 4px", borderRadius: 999, background: "#ffffffb8", fontWeight: 700, fontSize: 11 }}>
+                              {statusText}
+                            </span>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "2px 5px",
+                                borderRadius: 999,
+                                fontWeight: 700,
+                                fontSize: 10,
+                                background: remaining <= 0 ? "#dcfce7" : paid > 0 ? "#fef3c7" : "#e2e8f0",
+                                color: remaining <= 0 ? "#166534" : paid > 0 ? "#92400e" : "#334155",
+                              }}
+                            >
+                              {remaining <= 0 ? "Pago" : paid > 0 ? "Parcial" : "Não pago"}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ padding: "4px 5px", whiteSpace: "normal" }}>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", minWidth: 0 }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              disabled={actionId === item.id}
+                              onClick={() => void toggleDebtPaid(item)}
+                              style={{
+                                padding: "4px 5px",
+                                fontSize: 11,
+                                whiteSpace: "nowrap",
+                                color: item.payment_reported ? "#475569" : "#047857",
+                                fontWeight: 800,
+                              }}
+                            >
+                              {actionId === item.id
+                                ? "Salvando..."
+                                : item.payment_reported
+                                  ? "Reabrir"
+                                  : "Marcar paga"}
+                            </button>
+                            <button type="button" className="btn" disabled={actionId === item.id} onClick={() => void removeDebt(item)} style={{ padding: "3px 4px", fontSize: 9, color: "#b91c1c" }}>
+                              Excluir
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: "#f1f5f9", color: "#334155", fontWeight: 800 }}>
+                    <td colSpan={2} style={{ padding: "4px 5px", fontWeight: 800, whiteSpace: "nowrap" }}>
+                      TOTAL — {filteredItems.length} Div.
+                    </td>
+                    <td style={{ padding: "4px 5px", fontWeight: 800, whiteSpace: "nowrap" }}>
+                      {money(filteredItems.reduce((sum, item) => sum + Math.max(0, Number(item.amount) || 0), 0))}
+                    </td>
+                    <td colSpan={3} style={{ padding: "4px 5px" }} />
+                  </tr>
+                  <tr style={{ background: "#f8fafc", color: "#334155", fontWeight: 700 }}>
+                    <td colSpan={4} style={{ padding: "6px 5px" }} />
+                    <td style={{ padding: "6px 5px", whiteSpace: "nowrap", fontSize: 11 }}>
+                      Pago: {money(filteredItems.reduce((sum, item) => {
+                        const amount = Math.max(0, Number(item.amount) || 0);
+                        return sum + Math.min(amount, Math.max(0, Number(item.paid_amount) || 0));
+                      }, 0))}
+                    </td>
+                    <td style={{ padding: "6px 5px", whiteSpace: "nowrap", fontSize: 11 }}>
+                      Falta pagar: {money(filteredItems.reduce((sum, item) => {
+                        const amount = Math.max(0, Number(item.amount) || 0);
+                        const paid = Math.min(amount, Math.max(0, Number(item.paid_amount) || 0));
+                        return sum + Math.max(0, amount - paid);
+                      }, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+              </div>
+
+              <div
+              style={{
+                marginTop: 10,
+                padding: "4px 5px",
+                border: "1px solid #dbe3ec",
+                borderRadius: 10,
+                background: "var(--surface, #f8fafc)",
+                color: "var(--muted, #64748b)",
+                fontSize: 11,
+                lineHeight: 1.7,
+              }}
+            >
+              <strong style={{ color: "var(--foreground, #172033)" }}>
+                Como ler esta tabela
+              </strong>
+              <div style={{ marginTop: 5, display: "flex", flexDirection: "column", gap: 3 }}>
+                <p style={{ margin: 0 }}><strong>Valor:</strong> valor original da dívida.</p>
+                <p style={{ margin: 0 }}><strong>Venc.:</strong> data de vencimento.</p>
+                <p style={{ margin: 0 }}><strong>Status:</strong> situação atual da dívida.</p>
+              </div>
+              <p style={{ margin: "3px 0 0" }}>
+                Os totais no rodapé consideram somente as dívidas exibidas no
+                filtro selecionado. Se a tabela estiver vazia, selecione outro
+                filtro ou cadastre uma dívida.
+              </p>
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <footer
+        style={{
+          color: "var(--muted, #64748b)",
+          fontSize: 12,
+          textAlign: "center",
+          marginTop: 28,
+          lineHeight: 1.6,
+        }}
+      >
+        Resgata+ · Acompanhe seus compromissos com mais clareza.
+        <br />
+        Os totais são calculados com base nos registros salvos nesta conta.
+      </footer>
+    </main>
+  );
+}

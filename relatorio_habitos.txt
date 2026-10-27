@@ -1,0 +1,1261 @@
+RELATÓRIO DO PROJETO
+
+ARQUIVOS ENCONTRADOS
+- backup-carteira-20261025-035935/AppHeader.tsx
+- backup-habitos-controle-20261025-110701/AppHeader.tsx
+- backup-habitos-controle-20261025-113152/src/app/controle/page.tsx
+- backup-habitos-controle-20261025-113152/src/app/financeiro/page.tsx
+- backup-habitos-controle-20261025-113152/src/app/habitos/page.tsx
+- backup-habitos-controle-20261025-113152/src/components/AppHeader.tsx
+- backup-habitos-controle-20261025-113152/src/components/HabitControlApp.tsx
+- backup-integracao-despesas-20261025-111858/page.tsx
+- backup-mes-local-20261025-112533/page.tsx
+- backup-mes-local-20261025-112638/page.tsx
+- next-env.d.ts
+- next.config.ts
+- open-next.config.ts
+- package-lock.json
+- package.json
+- src/app/apostas/page.tsx
+- src/app/carteira/page.tsx
+- src/app/controle/page.tsx
+- src/app/controle-contas/page.tsx
+- src/app/dashboard/dashboard.css
+- src/app/dashboard/page.tsx
+- src/app/dividas/page.tsx
+- src/app/financeiro/page.tsx
+- src/app/globals.css
+- src/app/habitos/page.tsx
+- src/app/layout.tsx
+- src/app/login/page.tsx
+- src/app/page.module.css
+- src/app/page.tsx
+- src/app/perfil/page.tsx
+- src/app/planejamento/page.tsx
+- src/app/recuperar-senha/page.tsx
+- src/app/redefinir-senha/page.tsx
+- src/app/register/page.tsx
+- src/app/relatorios/page.tsx
+- src/app/servicos/dividas/page.tsx
+- src/app/servicos/financeiro/page.tsx
+- src/app/servicos/habitos-controle/page.tsx
+- src/components/AppHeader.tsx
+- src/components/HabitControlApp.tsx
+- src/components/ServiceLanding.tsx
+- src/components/auth-screen.tsx
+- src/lib/supabase.ts
+- src/types/index.ts
+- supabase/.temp/linked-project.json
+- tsconfig.json
+
+TRECHOS RELEVANTES
+
+### backup-carteira-20261025-035935/AppHeader.tsx
+11:   { href: "/financeiro", label: "Financeiro" },
+12:   { href: "/controle-contas", label: "Controle de contas" },
+13:   { href: "/apostas", label: "Hábitos & Controle" },
+14:   { href: "/perfil", label: "Perfil" },
+15: ];
+16: 
+
+### backup-habitos-controle-20261025-110701/AppHeader.tsx
+10:   { href: "/dividas", label: "Dívidas" },
+11:   { href: "/financeiro", label: "Financeiro" },
+12:   { href: "/carteira", label: "Carteira" },
+13:   { href: "/planejamento", label: "Planejamento" },
+14:   { href: "/relatorios", label: "Relatórios" },
+15:   { href: "/controle-contas", label: "Controle de contas" },
+16:   { href: "/apostas", label: "Hábitos & Controle" },
+17:   { href: "/perfil", label: "Perfil" },
+18: ];
+19: 
+
+### backup-habitos-controle-20261025-113152/src/app/financeiro/page.tsx
+241:     .reduce((sum, debt) => sum + remaining(debt), 0);
+242: 
+243:   // A tabela já reúne despesas comuns e despesas originadas em Hábitos.
+244:   // Não somamos habit_entry_id separadamente para evitar duplicidade.
+245:   const totalExpenses = expenses.reduce(
+246:     (sum, expense) => sum + numberValue(expense.amount),
+507:           } catch (receiptError) {
+508:             receiptMessage =
+509:               " O pagamento foi registrado, mas o comprovante não foi enviado. Anexe-o pelo histórico depois." +
+510:               (receiptError instanceof Error
+511:                 ? ` Detalhe: ${receiptError.message}`
+512:                 : "");
+952:                 <div className="stat-label">Despesas registradas</div>
+953:                 <div className="stat-value">{money(totalExpenses)}</div>
+954:                 <p className="muted">Total de despesas comuns e gastos de hábitos.</p>
+955:               </article>
+956:               <article className="card">
+957:                 <div className="stat-label">Despesas deste mês</div>
+962: 
+963:             <section className="card">
+964:               <h2>Minhas contas e carteiras</h2>
+965:               {wallets.length === 0 ? (
+966:                 <p className="empty">
+967:                   Cadastre seu primeiro banco, carteira digital ou dinheiro em espécie.
+968:                 </p>
+969:               ) : (
+970:                 <div className="account-grid">
+997: 
+998:             <section className="card">
+999:               <h2>Adicionar conta ou carteira</h2>
+1000:               <form className="form-grid" onSubmit={addWallet}>
+1001:                 <label>
+1002:                   Nome da conta
+1015:                   >
+1016:                     <option value="banco">Banco</option>
+1017:                     <option value="carteira digital">Carteira digital</option>
+1018:                     <option value="dinheiro">Dinheiro em espécie</option>
+1019:                     <option value="poupança">Poupança</option>
+1020:                     <option value="outro">Outro</option>
+1045:               ) : wallets.length === 0 ? (
+1046:                 <p className="empty">
+1047:                   Primeiro cadastre uma conta ou carteira com saldo disponível.
+1048:                 </p>
+1049:               ) : (
+1050:                 <form className="form-grid" onSubmit={registerPayment}>
+1144:               <p className="muted">
+1145:                 O registro usa a função segura do banco para atualizar o saldo da conta,
+1146:                 o valor pago da dívida e o histórico juntos.
+1147:               </p>
+1148:             </section>
+1149: 
+1203: 
+1204:             <section className="card">
+1205:               <h2>Histórico de pagamentos</h2>
+1206:               <input
+1207:                 ref={historyReceiptInput}
+1208:                 type="file"
+1303:                   </div>
+1304:                   <p className="muted">
+1305:                     Total pago no histórico: {money(totalPaid)}
+1306:                   </p>
+1307:                 </div>
+1308: 
+
+### backup-habitos-controle-20261025-113152/src/app/habitos/page.tsx
+1: import HabitControlApp from "@/components/HabitControlApp";
+2: 
+3: export default function HabitosPage() {
+4:   return <HabitControlApp mode="habitos" />;
+5: }
+
+### backup-habitos-controle-20261025-113152/src/components/AppHeader.tsx
+10:   { href: "/dividas", label: "Dívidas" },
+11:   { href: "/financeiro", label: "Financeiro" },
+12:   { href: "/carteira", label: "Carteira" },
+13:   { href: "/planejamento", label: "Planejamento" },
+14:   { href: "/relatorios", label: "Relatórios" },
+15:   { href: "/controle-contas", label: "Controle de contas" },
+16:   { href: "/habitos", label: "Hábitos" },
+17:   { href: "/controle", label: "Controle" },
+18:   { href: "/perfil", label: "Perfil" },
+19: ];
+
+### backup-habitos-controle-20261025-113152/src/components/HabitControlApp.tsx
+5: import { useCallback, useEffect, useState } from "react";
+6: 
+7: type Mode = "habitos" | "controle";
+8: type Habit = {
+9:   id: string;
+10:   name: string;
+50:   ["lazer", "Lazer"],
+51:   ["compras", "Compras"],
+52:   ["habitos", "Hábitos"],
+53:   ["educacao", "Educação"],
+54:   ["outros", "Outros"],
+55: ];
+57: export default function HabitControlApp({ mode }: { mode: Mode }) {
+58:   const supabase = getSupabaseBrowserClient();
+59:   const isHabits = mode === "habitos";
+60:   const [userId, setUserId] = useState("");
+61:   const [habits, setHabits] = useState<Habit[]>([]);
+62:   const [entries, setEntries] = useState<Entry[]>([]);
+164:     try {
+165:       const goal = Number(habitGoal.replace(",", "."));
+166:       if (!habitName.trim()) throw new Error("Informe o nome do hábito.");
+167:       if (!Number.isFinite(goal) || goal < 0) throw new Error("Informe uma meta válida.");
+168:       const { data, error } = await supabase.from("habit_controls").insert({
+169:         user_id: userId,
+176:       setHabitGoal("0");
+177:       setSelectedHabit(data.id);
+178:       setMessage("Hábito criado.");
+179:       await loadData();
+180:     } catch (error) {
+181:       setMessage(error instanceof Error ? error.message : "Não foi possível criar o hábito.");
+182:     } finally { setSaving(false); }
+183:   }
+184: 
+188:     setMessage("");
+189:     try {
+190:       if (!selectedHabit) throw new Error("Cadastre ou selecione um hábito.");
+191:       const amount = Number(habitSpent.replace(",", "."));
+192:       if (!Number.isFinite(amount) || amount < 0) throw new Error("Informe um gasto válido.");
+193:       if (amount > 0 && !habitAccount) {
+194:         throw new Error("Selecione a conta da qual saiu o gasto para atualizar a Carteira.");
+195:       }
+196:       const { error } = await supabase.rpc("save_habit_entry", {
+197:         p_habit_id: selectedHabit,
+204:       if (error) throw error;
+205:       setHabitNotes("");
+206:       setMessage("Registro do hábito salvo; o gasto foi integrado às despesas financeiras.");
+207:       await loadData();
+208:     } catch (error) {
+209:       setMessage(error instanceof Error ? error.message : "Não foi possível salvar o registro.");
+232:       setExpenseAmount("");
+233:       setExpenseNotes("");
+234:       setMessage("Despesa registrada e saldo da Carteira atualizado.");
+235:       await loadData();
+236:     } catch (error) {
+237:       setMessage(error instanceof Error ? error.message : "Não foi possível registrar a despesa.");
+240: 
+241:   async function deactivateHabit(habit: Habit) {
+242:     if (!window.confirm(`Desativar o hábito "${habit.name}"? O histórico será preservado.`)) return;
+243:     setSaving(true);
+244:     try {
+245:       const { error } = await supabase.from("habit_controls")
+248:         .eq("user_id", userId);
+249:       if (error) throw error;
+250:       setMessage("Hábito desativado. O histórico foi preservado.");
+251:       await loadData();
+252:     } catch (error) {
+253:       setMessage(error instanceof Error ? error.message : "Não foi possível desativar o hábito.");
+254:     } finally { setSaving(false); }
+255:   }
+256: 
+262:           <div>
+263:             <span className="hc-eyebrow">{isHabits ? "BEM-ESTAR FINANCEIRO" : "ORGANIZAÇÃO DO DINHEIRO"}</span>
+264:             <h1>{isHabits ? "Hábitos" : "Controle financeiro"}</h1>
+265:             <p>{isHabits
+266:               ? "Acompanhe seus hábitos no seu ritmo, sem julgamentos e sem precisar registrar o que não quiser."
+267:               : "Registre despesas do dia a dia, acompanhe categorias e entenda para onde seu dinheiro está indo."}</p>
+268:           </div>
+269:           <div className="hc-hero-mark" aria-hidden="true">{isHabits ? "◉" : "↗"}</div>
+270:         </header>
+271: 
+272:         <nav className="hc-switch" aria-label="Páginas de acompanhamento">
+273:           <a className={isHabits ? "selected" : ""} href="/habitos">Hábitos</a>
+274:           <a className={!isHabits ? "selected" : ""} href="/controle">Controle</a>
+275:           <a href="/financeiro">Finanças</a>
+276:           <a href="/carteira">Carteira</a>
+277:         </nav>
+278: 
+279:         {message && <div className="hc-message" role="status">{message}</div>}
+281:           <section className="hc-stats">
+282:             <article className="hc-stat"><span>Despesas no período</span><strong>{money(periodTotal)}</strong><small>Somente lançamentos financeiros</small></article>
+283:             <article className="hc-stat"><span>Gastos de hoje</span><strong>{money(todayExpenses)}</strong><small>Despesas registradas na data atual</small></article>
+284:             <article className="hc-stat"><span>Saldo cadastrado na Carteira</span><strong>{money(wallets.reduce((s, w) => s + num(w.balance), 0))}</strong><small>Saldo atual das contas cadastradas</small></article>
+285:             <article className="hc-stat"><span>{isHabits ? "Gastos associados a hábitos" : "Lançamentos no período"}</span><strong>{isHabits ? money(habitSpend) : recentExpenses.length}</strong><small>{isHabits ? "Resumo dos registros de hábitos" : "Despesas registradas no intervalo"}</small></article>
+286:           </section>
+287: 
+288:           <section className="hc-card hc-period">
+299:             <div className="hc-columns">
+300:               <section className="hc-card">
+301:                 <h2>Criar um hábito</h2>
+302:                 <p className="hc-muted">Escolha somente o que faz sentido para você. Você pode desativar um hábito depois.</p>
+303:                 <form className="hc-form" onSubmit={addHabit}>
+304:                   <label>Nome do hábito<input value={habitName} onChange={(e) => setHabitName(e.target.value)} maxLength={80} placeholder="Ex.: compras por impulso" required /></label>
+305:                   <label>Categoria
+306:                     <select value={habitCategory} onChange={(e) => setHabitCategory(e.target.value)}>
+307:                       <option value="personalizado">Personalizado</option>
+313:                     </select>
+314:                   </label>
+315:                   <label>Meta de gasto opcional (R$)<input value={habitGoal} onChange={(e) => setHabitGoal(e.target.value)} inputMode="decimal" placeholder="0,00" /></label>
+316:                   <button disabled={saving}>{saving ? "Salvando…" : "Adicionar hábito"}</button>
+317:                 </form>
+318:               </section>
+319: 
+320:               <section className="hc-card">
+321:                 <h2>Registrar acompanhamento</h2>
+322:                 <form className="hc-form" onSubmit={saveHabitEntry}>
+323:                   <label>Hábito
+324:                     <select value={selectedHabit} onChange={(e) => setSelectedHabit(e.target.value)} required>
+325:                       <option value="">Selecione</option>
+326:                       {habits.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+335:                     </select>
+336:                   </label>
+337:                   <label>Quanto gastou? (R$)<input value={habitSpent} onChange={(e) => setHabitSpent(e.target.value)} inputMode="decimal" placeholder="0,00" /></label>
+338:                   {num(habitSpent) > 0 && <label>Conta usada
+339:                     <select value={habitAccount} onChange={(e) => setHabitAccount(e.target.value)} required>
+340:                       <option value="">Selecione uma conta</option>
+349: 
+350:             <section className="hc-card">
+351:               <h2>Seus hábitos</h2>
+352:               {!habits.length ? <p className="hc-muted">Você ainda não cadastrou hábitos. Comece pelos que deseja acompanhar.</p> :
+353:                 <div className="hc-habit-list">{habits.map((h) => {
+354:                   const items = entries.filter((e) => e.habit_id === h.id);
+355:                   const done = items.filter((e) => e.status === "occurred").length;
+357:                     <div className="hc-habit-icon">✳</div>
+358:                     <div className="hc-habit-main"><strong>{h.name}</strong><span>{h.category} · {items.length} registros · {done} ocorrências</span>
+359:                       {num(h.goal_amount) > 0 && <small>Meta de gasto: {money(num(h.goal_amount))}</small>}</div>
+360:                     <button className="hc-light-button" type="button" disabled={saving} onClick={() => void deactivateHabit(h)}>Desativar</button>
+361:                   </article>;
+362:                 })}</div>}
+363:               {selectedHabit && <p className="hc-muted">Hábito selecionado: {recordedDays} registros no histórico, {occurredDays} marcados como ocorridos.</p>}
+364:             </section>
+365:           </> : <>
+366:             <div className="hc-columns">
+367:               <section className="hc-card">
+368:                 <h2>Registrar despesa</h2>
+369:                 <p className="hc-muted">A despesa é salva no histórico financeiro e descontada da conta selecionada.</p>
+370:                 <form className="hc-form" onSubmit={addExpense}>
+371:                   <label>Descrição<input value={expenseName} onChange={(e) => setExpenseName(e.target.value)} maxLength={120} placeholder="Ex.: mercado, ônibus, farmácia" required /></label>
+372:                   <label>Categoria
+385:                   <label>Observação opcional<textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} maxLength={1000} rows={3} placeholder="Detalhes que queira guardar" /></label>
+386:                   <button disabled={saving || !wallets.length}>{saving ? "Salvando…" : "Registrar despesa"}</button>
+387:                   {!wallets.length && <p className="hc-muted">Cadastre primeiro uma conta na Carteira para registrar uma despesa com atualização de saldo.</p>}
+388:                 </form>
+389:               </section>
+390: 
+407: 
+408:           <section className="hc-card">
+409:             <h2>{isHabits ? "Histórico de gastos" : "Histórico de despesas"}</h2>
+410:             {recentExpenses.length === 0 ? <p className="hc-muted">Nenhuma despesa registrada no período selecionado.</p> :
+411:               <div className="hc-table-wrap"><table className="hc-table">
+412:                 <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead>
+
+### backup-integracao-despesas-20261025-111858/page.tsx
+460:           } catch (receiptError) {
+461:             receiptMessage =
+462:               " O pagamento foi registrado, mas o comprovante não foi enviado. Anexe-o pelo histórico depois." +
+463:               (receiptError instanceof Error
+464:                 ? ` Detalhe: ${receiptError.message}`
+465:                 : "");
+905: 
+906:             <section className="card">
+907:               <h2>Minhas contas e carteiras</h2>
+908:               {wallets.length === 0 ? (
+909:                 <p className="empty">
+910:                   Cadastre seu primeiro banco, carteira digital ou dinheiro em espécie.
+911:                 </p>
+912:               ) : (
+913:                 <div className="account-grid">
+940: 
+941:             <section className="card">
+942:               <h2>Adicionar conta ou carteira</h2>
+943:               <form className="form-grid" onSubmit={addWallet}>
+944:                 <label>
+945:                   Nome da conta
+958:                   >
+959:                     <option value="banco">Banco</option>
+960:                     <option value="carteira digital">Carteira digital</option>
+961:                     <option value="dinheiro">Dinheiro em espécie</option>
+962:                     <option value="poupança">Poupança</option>
+963:                     <option value="outro">Outro</option>
+988:               ) : wallets.length === 0 ? (
+989:                 <p className="empty">
+990:                   Primeiro cadastre uma conta ou carteira com saldo disponível.
+991:                 </p>
+992:               ) : (
+993:                 <form className="form-grid" onSubmit={registerPayment}>
+1087:               <p className="muted">
+1088:                 O registro usa a função segura do banco para atualizar o saldo da conta,
+1089:                 o valor pago da dívida e o histórico juntos.
+1090:               </p>
+1091:             </section>
+1092: 
+1146: 
+1147:             <section className="card">
+1148:               <h2>Histórico de pagamentos</h2>
+1149:               <input
+1150:                 ref={historyReceiptInput}
+1151:                 type="file"
+1246:                   </div>
+1247:                   <p className="muted">
+1248:                     Total pago no histórico: {money(totalPaid)}
+1249:                   </p>
+1250:                 </div>
+1251: 
+
+### backup-mes-local-20261025-112533/page.tsx
+241:     .reduce((sum, debt) => sum + remaining(debt), 0);
+242: 
+243:   // A tabela já reúne despesas comuns e despesas originadas em Hábitos.
+244:   // Não somamos habit_entry_id separadamente para evitar duplicidade.
+245:   const totalExpenses = expenses.reduce(
+246:     (sum, expense) => sum + numberValue(expense.amount),
+504:           } catch (receiptError) {
+505:             receiptMessage =
+506:               " O pagamento foi registrado, mas o comprovante não foi enviado. Anexe-o pelo histórico depois." +
+507:               (receiptError instanceof Error
+508:                 ? ` Detalhe: ${receiptError.message}`
+509:                 : "");
+949:                 <div className="stat-label">Despesas registradas</div>
+950:                 <div className="stat-value">{money(totalExpenses)}</div>
+951:                 <p className="muted">Total de despesas comuns e gastos de hábitos.</p>
+952:               </article>
+953:               <article className="card">
+954:                 <div className="stat-label">Despesas deste mês</div>
+959: 
+960:             <section className="card">
+961:               <h2>Minhas contas e carteiras</h2>
+962:               {wallets.length === 0 ? (
+963:                 <p className="empty">
+964:                   Cadastre seu primeiro banco, carteira digital ou dinheiro em espécie.
+965:                 </p>
+966:               ) : (
+967:                 <div className="account-grid">
+994: 
+995:             <section className="card">
+996:               <h2>Adicionar conta ou carteira</h2>
+997:               <form className="form-grid" onSubmit={addWallet}>
+998:                 <label>
+999:                   Nome da conta
+1012:                   >
+1013:                     <option value="banco">Banco</option>
+1014:                     <option value="carteira digital">Carteira digital</option>
+1015:                     <option value="dinheiro">Dinheiro em espécie</option>
+1016:                     <option value="poupança">Poupança</option>
+1017:                     <option value="outro">Outro</option>
+1042:               ) : wallets.length === 0 ? (
+1043:                 <p className="empty">
+1044:                   Primeiro cadastre uma conta ou carteira com saldo disponível.
+1045:                 </p>
+1046:               ) : (
+1047:                 <form className="form-grid" onSubmit={registerPayment}>
+1141:               <p className="muted">
+1142:                 O registro usa a função segura do banco para atualizar o saldo da conta,
+1143:                 o valor pago da dívida e o histórico juntos.
+1144:               </p>
+1145:             </section>
+1146: 
+1200: 
+1201:             <section className="card">
+1202:               <h2>Histórico de pagamentos</h2>
+1203:               <input
+1204:                 ref={historyReceiptInput}
+1205:                 type="file"
+1300:                   </div>
+1301:                   <p className="muted">
+1302:                     Total pago no histórico: {money(totalPaid)}
+1303:                   </p>
+1304:                 </div>
+1305: 
+
+### backup-mes-local-20261025-112638/page.tsx
+241:     .reduce((sum, debt) => sum + remaining(debt), 0);
+242: 
+243:   // A tabela já reúne despesas comuns e despesas originadas em Hábitos.
+244:   // Não somamos habit_entry_id separadamente para evitar duplicidade.
+245:   const totalExpenses = expenses.reduce(
+246:     (sum, expense) => sum + numberValue(expense.amount),
+507:           } catch (receiptError) {
+508:             receiptMessage =
+509:               " O pagamento foi registrado, mas o comprovante não foi enviado. Anexe-o pelo histórico depois." +
+510:               (receiptError instanceof Error
+511:                 ? ` Detalhe: ${receiptError.message}`
+512:                 : "");
+952:                 <div className="stat-label">Despesas registradas</div>
+953:                 <div className="stat-value">{money(totalExpenses)}</div>
+954:                 <p className="muted">Total de despesas comuns e gastos de hábitos.</p>
+955:               </article>
+956:               <article className="card">
+957:                 <div className="stat-label">Despesas deste mês</div>
+962: 
+963:             <section className="card">
+964:               <h2>Minhas contas e carteiras</h2>
+965:               {wallets.length === 0 ? (
+966:                 <p className="empty">
+967:                   Cadastre seu primeiro banco, carteira digital ou dinheiro em espécie.
+968:                 </p>
+969:               ) : (
+970:                 <div className="account-grid">
+997: 
+998:             <section className="card">
+999:               <h2>Adicionar conta ou carteira</h2>
+1000:               <form className="form-grid" onSubmit={addWallet}>
+1001:                 <label>
+1002:                   Nome da conta
+1015:                   >
+1016:                     <option value="banco">Banco</option>
+1017:                     <option value="carteira digital">Carteira digital</option>
+1018:                     <option value="dinheiro">Dinheiro em espécie</option>
+1019:                     <option value="poupança">Poupança</option>
+1020:                     <option value="outro">Outro</option>
+1045:               ) : wallets.length === 0 ? (
+1046:                 <p className="empty">
+1047:                   Primeiro cadastre uma conta ou carteira com saldo disponível.
+1048:                 </p>
+1049:               ) : (
+1050:                 <form className="form-grid" onSubmit={registerPayment}>
+1144:               <p className="muted">
+1145:                 O registro usa a função segura do banco para atualizar o saldo da conta,
+1146:                 o valor pago da dívida e o histórico juntos.
+1147:               </p>
+1148:             </section>
+1149: 
+1203: 
+1204:             <section className="card">
+1205:               <h2>Histórico de pagamentos</h2>
+1206:               <input
+1207:                 ref={historyReceiptInput}
+1208:                 type="file"
+1303:                   </div>
+1304:                   <p className="muted">
+1305:                     Total pago no histórico: {money(totalPaid)}
+1306:                   </p>
+1307:                 </div>
+1308: 
+
+### src/app/apostas/page.tsx
+31:   { category: "assinaturas", name: "Assinaturas" },
+32:   { category: "pessoal", name: "Compras pessoais" },
+33:   { category: "outros", name: "Outro gasto ou hábito" },
+34:   { category: "tabaco_nicotina", name: "Tabaco e nicotina" },
+35:   { category: "redes_sociais", name: "Uso de redes sociais" },
+36:   { category: "jogos_digitais", name: "Jogos e videogames" },
+37:   { category: "outro_habito", name: "Outro hábito ou comportamento" },
+38: ];
+39: 
+40: const money = (value: number) =>
+89: };
+90: 
+91: export default function HabitosControlePage() {
+92:   const router = useRouter();
+93: 
+94:   const [habits, setHabits] = useState<Habit[]>([]);
+313:     setMessage(
+314:       habit.active
+315:         ? "Categoria ocultada. O histórico foi preservado."
+316:         : "Categoria reativada."
+317:     );
+318:   }
+338:           </p>
+339:           <h1 style={{ fontSize: "clamp(1.6rem,3.5vw,2.2rem)", margin: "0 0 6px" }}>
+340:             Hábitos &amp; Controle
+341:           </h1>
+342:           <p style={{ color: "#526078", lineHeight: 1.5, maxWidth: 760, marginTop: 0 }}>
+343:             Acompanhe os comportamentos e gastos que fazem sentido para você.
+344:             Escolha suas categorias, registre no seu ritmo e acompanhe seu histórico
+345:             sem julgamentos.
+346:           </p>
+347:         </header>
+371:             >
+372:               {[
+373:                 { title: "Gastos registrados hoje", value: totals.today },
+374:                 { title: "Nesta semana", value: totals.week },
+375:                 { title: "Neste mês", value: totals.month },
+376:               ].map((item) => (
+430: 
+431:                   <label style={{ display: "block", marginTop: 16, fontWeight: 600 }}>
+432:                     Meta mensal de gastos (opcional)
+433:                     <input
+434:                       style={styles.input}
+435:                       type="number"
+504:                     <p style={{ color: "#64748b", lineHeight: 1.7 }}>
+505:                       Adicione uma categoria para começar. Você não precisa acompanhar
+506:                       hábitos que não fazem parte da sua vida.
+507:                     </p>
+508:                   ) : (
+509:                     <form onSubmit={saveEntry}>
+568: 
+569:                       <label style={{ display: "block", fontWeight: 600 }}>
+570:                         Quanto gastou? (R$)
+571:                         <input
+572:                           style={styles.input}
+573:                           type="number"
+605: 
+606:                 <section style={styles.panel}>
+607:                   <h2 style={{ marginTop: 0 }}>3. Histórico</h2>
+608:                   <p style={{ color: "#64748b", lineHeight: 1.6 }}>
+609:                     Dias sem registro continuam sendo dias sem informação — não são
+610:                     contabilizados como dias em que o comportamento não aconteceu.
+612: 
+613:                   {entries.length === 0 ? (
+614:                     <p style={{ color: "#64748b" }}>Seu histórico aparecerá aqui.</p>
+615:                   ) : (
+616:                     <div style={{ display: "grid", gap: 12 }}>
+617:                       {entries.map((entry) => (
+660:         <footer style={{ color: "#64748b", fontSize: 13, lineHeight: 1.7, marginTop: 24 }}>
+661:           Seus registros são privados e associados à sua conta. Ocultar uma categoria
+662:           preserva o histórico. Este módulo não movimenta sua carteira, não paga dívidas
+663:           e não envia automaticamente informações para outros módulos.
+664:         </footer>
+665:       </div>
+
+### src/app/carteira/page.tsx
+16:   { value: "banco", label: "Conta bancária" },
+17:   { value: "dinheiro", label: "Dinheiro em mãos" },
+18:   { value: "digital", label: "Carteira digital" },
+19:   { value: "poupanca", label: "Poupança" },
+20:   { value: "outro", label: "Outra conta" },
+21: ];
+27:   });
+28: 
+29: export default function CarteiraPage() {
+30:   const supabase = getSupabaseBrowserClient();
+31:   const router = useRouter();
+32: 
+153: 
+154:       resetForm();
+155:       setNotice(editingId ? "Conta atualizada." : "Conta adicionada à Carteira.");
+156:       await loadWallets();
+157:     } catch (err) {
+158:       setError(
+199:     } catch {
+200:       setError(
+201:         "Não foi possível excluir esta conta. Ela pode estar vinculada a pagamentos registrados. Preserve o histórico e tente editar a conta em vez de excluí-la."
+202:       );
+203:     } finally {
+204:       setBusyId(null);
+215:         <div>
+216:           <p className="muted">RESGATA · ORGANIZAÇÃO FINANCEIRA</p>
+217:           <h1>Minha Carteira</h1>
+218:           <p className="muted">
+219:             Reúna os saldos dos seus bancos, dinheiro em mãos e carteiras digitais.
+220:           </p>
+221:         </div>
+222:       </div>
+238:             <h2>{editingId ? "Editar conta" : "Adicionar conta"}</h2>
+239:             <p className="muted">
+240:               Informe o saldo atual. Use um registro para cada conta ou carteira.
+241:             </p>
+242:           </div>
+243:         </div>
+282:           <div className="form-actions">
+283:             <button type="submit" disabled={saving}>
+284:               {saving ? "Salvando..." : editingId ? "Salvar alterações" : "Adicionar à Carteira"}
+285:             </button>
+286:             {editingId && (
+287:               <button type="button" className="secondary" onClick={resetForm}>
+309:             <p>Você ainda não cadastrou nenhuma conta.</p>
+310:             <p className="muted">
+311:               Adicione seu primeiro banco, carteira digital ou valor em dinheiro.
+312:             </p>
+313:           </div>
+314:         ) : (
+359:         <h2>Próximo passo</h2>
+360:         <p className="muted">
+361:           A página Finanças continua sendo responsável pelo acompanhamento das dívidas e pagamentos.
+362:           A Carteira centraliza as contas usadas no sistema.
+363:         </p>
+364:         <p><Link href="/financeiro">Ir para Finanças →</Link></p>
+365:       </section>
+
+### src/app/controle-contas/page.tsx
+357:           }}>
+358:             Dê o primeiro passo para ter suas contas em dia. Organize seus
+359:             vencimentos, acompanhe seus gastos e tenha mais clareza para decidir
+360:             como usar seu dinheiro. Um passo de cada vez já faz diferença.
+361:           </p>
+362:           <div style={{
+
+### src/app/dashboard/dashboard.css
+995: }
+996: 
+997: /* ===== Hábitos & Controle: painel visual renovado ===== */
+998: .dashboard-page .dash-savings-section {
+999:   position: relative;
+1000:   isolation: isolate;
+
+### src/app/dashboard/page.tsx
+159:           <span className="dash-balance-label">SALDO DISPONÍVEL</span>
+160:           <strong>{money(totalBalance)}</strong>
+161:           <span className="dash-balance-note">Total das suas carteiras</span>
+162:           <Link href="/financeiro" className="dash-balance-link">
+163:             Ver meu financeiro →
+164:           </Link>
+169:     </Link>
+170:     <Link className="dash-shortcut dash-shortcut-habits" href="/apostas">
+171:       Hábitos &amp; Controle
+172:     </Link>
+173:     <Link className="dash-shortcut dash-shortcut-debts" href="/dividas">
+174:       Minhas contas
+293:           <span className="dash-savings-icon" aria-hidden="true">🌱</span>
+294:           <div>
+295:             <span className="dash-section-kicker">SEUS HÁBITOS FINANCEIROS</span>
+296:             <h2 id="savings-heading">Hábitos &amp; Controle</h2>
+297:             <p>
+298:               Acompanhe seus hábitos, registre gastos relacionados e defina metas pessoais.
+299:               Você escolhe o que deseja monitorar e consulta seu histórico no seu ritmo.
+300:             </p>
+301:           </div>
+302:         </div>
+315:         {!loading && !hasSavings && (
+316:           <p className="dash-savings-empty">
+317:             Você ainda não tem registros. Cadastre apenas os hábitos que deseja acompanhar
+318:             e comece quando se sentir à vontade.
+319:           </p>
+320:         )}
+323:           <p>
+324:             Seus registros são pessoais e representam as informações que você escolheu anotar.
+325:             Nenhum hábito precisa ser selecionado se não fizer parte da sua rotina.
+326:           </p>
+327:           <Link className="dash-savings-button" href="/apostas">
+328:             {hasSavings ? "Ver histórico" : "Começar a acompanhar"} →
+329:           </Link>
+330:         </div>
+331:       </section>
+
+### src/app/dividas/page.tsx
+906: 
+907:         <section
+908:           id="historico-dividas"
+909:           style={{
+910:             ...cardStyle,
+911:             minWidth: 0,
+927:           >
+928:             <div>
+929:               <h2 style={{ fontSize: 20, margin: "0 0 6px" }}>Histórico</h2>
+930:               <p
+931:                 style={{
+932:                   color: "var(--muted, #64748b)",
+
+### src/app/financeiro/page.tsx
+241:     .reduce((sum, debt) => sum + remaining(debt), 0);
+242: 
+243:   // A tabela já reúne despesas comuns e despesas originadas em Hábitos.
+244:   // Não somamos habit_entry_id separadamente para evitar duplicidade.
+245:   const totalExpenses = expenses.reduce(
+246:     (sum, expense) => sum + numberValue(expense.amount),
+507:           } catch (receiptError) {
+508:             receiptMessage =
+509:               " O pagamento foi registrado, mas o comprovante não foi enviado. Anexe-o pelo histórico depois." +
+510:               (receiptError instanceof Error
+511:                 ? ` Detalhe: ${receiptError.message}`
+512:                 : "");
+952:                 <div className="stat-label">Despesas registradas</div>
+953:                 <div className="stat-value">{money(totalExpenses)}</div>
+954:                 <p className="muted">Total de despesas comuns e gastos de hábitos.</p>
+955:               </article>
+956:               <article className="card">
+957:                 <div className="stat-label">Despesas deste mês</div>
+962: 
+963:             <section className="card">
+964:               <h2>Minhas contas e carteiras</h2>
+965:               {wallets.length === 0 ? (
+966:                 <p className="empty">
+967:                   Cadastre seu primeiro banco, carteira digital ou dinheiro em espécie.
+968:                 </p>
+969:               ) : (
+970:                 <div className="account-grid">
+997: 
+998:             <section className="card">
+999:               <h2>Adicionar conta ou carteira</h2>
+1000:               <form className="form-grid" onSubmit={addWallet}>
+1001:                 <label>
+1002:                   Nome da conta
+1015:                   >
+1016:                     <option value="banco">Banco</option>
+1017:                     <option value="carteira digital">Carteira digital</option>
+1018:                     <option value="dinheiro">Dinheiro em espécie</option>
+1019:                     <option value="poupança">Poupança</option>
+1020:                     <option value="outro">Outro</option>
+1045:               ) : wallets.length === 0 ? (
+1046:                 <p className="empty">
+1047:                   Primeiro cadastre uma conta ou carteira com saldo disponível.
+1048:                 </p>
+1049:               ) : (
+1050:                 <form className="form-grid" onSubmit={registerPayment}>
+1144:               <p className="muted">
+1145:                 O registro usa a função segura do banco para atualizar o saldo da conta,
+1146:                 o valor pago da dívida e o histórico juntos.
+1147:               </p>
+1148:             </section>
+1149: 
+1203: 
+1204:             <section className="card">
+1205:               <h2>Histórico de pagamentos</h2>
+1206:               <input
+1207:                 ref={historyReceiptInput}
+1208:                 type="file"
+1303:                   </div>
+1304:                   <p className="muted">
+1305:                     Total pago no histórico: {money(totalPaid)}
+1306:                   </p>
+1307:                 </div>
+1308: 
+
+### src/app/globals.css
+2695: }
+2696: 
+2697: /* RESGATA: layout aprimorado para criação de hábitos */
+2698: .hc-habit-create-card {
+2699:   grid-column: 1 / -1;
+2700:   min-width: 0;
+2830: }
+2831: 
+2832: /* RESGATA: seletor expansível de hábitos */
+2833: .hc-habit-picker {
+2834:   margin-top: 18px;
+2835:   border: 1px solid var(--border, #dbe3ed);
+2894: 
+2895: 
+2896: /* RESGATA: painel profissional de acompanhamento */
+2897: .hc-record-card {
+2898:   min-width: 0;
+2899: }
+3054: 
+3055: 
+3056: /* RESGATA: cartões lado a lado de acompanhamento e hábitos */
+3057: .hc-habit-tracking-columns {
+3058:   display: grid;
+3059:   grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
+3153: }
+3154: 
+3155: /* Cadastro de hábitos expansível */
+3156: .hc-habit-create-details > summary {
+3157:   display: flex;
+3158:   align-items: center;
+3186: }
+3187: 
+3188: /* Resgata: resumo de hábitos no mesmo padrão dos demais cards */
+3189: .hc-habits-summary {
+3190:   display: grid;
+3191:   grid-template-columns: repeat(2, minmax(0, 1fr));
+
+### src/app/habitos/page.tsx
+1: import HabitControlApp from "@/components/HabitControlApp";
+2: 
+3: export default function HabitosPage() {
+4:   return <HabitControlApp mode="habitos" />;
+5: }
+
+### src/app/page.tsx
+9:   { label: "Finanças", href: "/servicos/financeiro", icon: "◫" },
+10:   { label: "Dívidas", href: "/servicos/dividas", icon: "▤" },
+11:   { label: "Hábitos & Controle", href: "/servicos/habitos-controle", icon: "✳" },
+12: ];
+13: 
+14: export default function HomePage() {
+80:             <p className={styles.centerDescription}>
+81:               Cuide das suas finanças, acompanhe suas dívidas e desenvolva
+82:               hábitos melhores. Tenha mais clareza para tomar decisões e
+83:               avançar no seu ritmo.
+84:             </p>
+85:             <div className={styles.centerActions}>
+92:             </div>
+93:             <div className={styles.centerFootnote}>
+94:               <span>✳</span> Finanças, hábitos e progresso — no seu ritmo.
+95:             </div>
+96:           </div>
+97:           <div className={styles.centerBottomMark} aria-hidden="true">R+</div>
+112:                 <h3>Seu dinheiro, mais organizado.</h3>
+113:                 <p>
+114:                   Visualize suas contas, acompanhe seus gastos e planeje seus
+115:                   próximos objetivos — com dívidas ou sem elas.
+116:                 </p>
+117:                 <div className={styles.homeInfoAction}>
+124:               <div className={styles.homeInfoIcon} aria-hidden="true">✳</div>
+125:               <div className={styles.homeInfoCardContent}>
+126:                 <span className={styles.homeInfoLabel}>HÁBITOS E PROGRESSO</span>
+127:                 <h3>Pequenos passos. Novos hábitos.</h3>
+128:                 <p>
+129:                   Acompanhe sua rotina, reconheça seus avanços e desenvolva
+130:                   hábitos mais conscientes, um dia de cada vez.
+131:                 </p>
+132:                 <div className={styles.homeInfoAction}>
+133:                   Seu progresso importa <span aria-hidden="true">↗</span>
+
+### src/app/perfil/page.tsx
+53:       <AppHeader />
+54: 
+55:       <nav className="nav"><Link className="brand" href="/">Resgata<span> Dívidas</span></Link><div className="navlinks"><Link href="/dashboard">Painel</Link><Link href="/dividas">Dívidas</Link><Link href="/apostas">Hábitos &amp; Controle</Link></div></nav>
+56:       <section className="panel"><h1 style={{ fontSize: "2.5rem" }}>Meu perfil</h1>
+57:         {loading ? <p className="muted">Carregando...</p> : (
+58:           <form className="form" onSubmit={save}>
+
+### src/app/planejamento/page.tsx
+58:   useEffect(() => {
+59:     try {
+60:       const saved = localStorage.getItem(`resgata-planejamento-${month}`);
+61:       setPlan(saved ? { ...initialPlan, ...JSON.parse(saved) } : initialPlan);
+62:     } catch {
+63:       setPlan(initialPlan);
+150:         }
+151:       }
+152:       localStorage.setItem(`resgata-planejamento-${month}`, JSON.stringify(plan));
+153:       setMessage("Planejamento salvo neste navegador.");
+154:     } catch (e) {
+155:       setMessage(e instanceof Error ? e.message : "Não foi possível salvar.");
+176:             <p style={{ color: "#64748b", margin: "0 0 6px" }}>Organização financeira</p>
+177:             <h1 style={{ fontSize: "clamp(26px,4vw,36px)", margin: 0 }}>Planejamento mensal</h1>
+178:             <p style={{ color: "#64748b", marginBottom: 0 }}>Planeje seus gastos e defina uma meta realista para quitar dívidas.</p>
+179:           </div>
+180:           <label style={{ display: "grid", gap: 6, fontWeight: 600 }}>
+181:             Mês de referência
+189:             <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 14, marginBottom: 22 }}>
+190:               {[
+191:                 ["Saldo total da Carteira", money(totals.wallet), "Saldo cadastrado nas contas"],
+192:                 ["Dívidas em aberto", money(totals.openDebts), "Saldo restante das dívidas"],
+193:                 ["Contas do mês pendentes", money(totals.pendingBills), "Controle de contas, não inclui dívidas"],
+194:                 ["Contas pagas no mês", money(totals.recordedExpenses), "Despesas marcadas como pagas"],
+209:                   {([
+210:                     ["income", "Renda prevista no mês"],
+211:                     ["essentials", "Gastos essenciais previstos"],
+212:                     ["otherExpenses", "Outros gastos previstos"],
+213:                     ["debtGoal", "Meta de pagamento de dívidas"],
+214:                   ] as [keyof Plan, string][]).map(([key, label]) => (
+215:                     <label key={key} style={{ display: "grid", gap: 6, fontWeight: 600 }}>
+229:                 {[
+230:                   ["Renda prevista", totals.income],
+231:                   ["Gastos essenciais", -totals.essentials],
+232:                   ["Outros gastos", -totals.other],
+233:                 ].map(([label, value]) => (
+234:                   <div key={String(label)} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "13px 0", borderBottom: "1px solid #edf0f4" }}>
+235:                     <span>{label}</span><strong>{money(Number(value))}</strong>
+237:                 ))}
+238:                 <div style={{ padding: "18px 0", borderBottom: "1px solid #edf0f4" }}>
+239:                   <span style={{ color: "#64748b" }}>Disponível após gastos planejados</span>
+240:                   <strong style={{ display: "block", fontSize: 28, color: totals.available < 0 ? "#b91c1c" : "#176b52", marginTop: 5 }}>{money(totals.available)}</strong>
+241:                 </div>
+242:                 <div style={{ paddingTop: 18 }}>
+244:                   <strong style={{ display: "block", fontSize: 28, color: totals.afterGoal < 0 ? "#b91c1c" : "#176b52", marginTop: 5 }}>{money(totals.afterGoal)}</strong>
+245:                 </div>
+246:                 {totals.available < 0 && <p style={{ color: "#b91c1c" }}>Seus gastos planejados ultrapassam a renda prevista. Revise o orçamento antes de definir pagamentos extras.</p>}
+247:                 {totals.goal > totals.available && <p style={{ color: "#b45309" }}>A meta para dívidas é maior que o valor disponível calculado.</p>}
+248:                 <p style={{ color: "#64748b", fontSize: 12, marginTop: 20 }}>A simulação não movimenta dinheiro nem altera dívidas ou saldos. O saldo da Carteira é mostrado separadamente e não é somado à renda mensal.</p>
+249:               </div>
+250:             </section>
+251: 
+252:             <section style={{ ...card, marginTop: 18 }}>
+253:               <h2 style={{ marginTop: 0 }}>Contas da Carteira</h2>
+254:               {wallets.length === 0 ? <p>Você ainda não cadastrou contas na Carteira.</p> : (
+255:                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12 }}>
+256:                   {wallets.map(w => <div key={w.id} style={{ padding: 14, borderRadius: 12, background: "#f8fafc" }}>
+257:                     <div style={{ color: "#64748b", fontSize: 13 }}>{w.name}</div>
+260:                 </div>
+261:               )}
+262:               <p style={{ marginBottom: 0, marginTop: 16 }}><a href="/carteira" style={{ color: "#176b52", fontWeight: 700 }}>Abrir Carteira →</a>　<a href="/controle-contas" style={{ color: "#176b52", fontWeight: 700 }}>Ver controle de contas →</a></p>
+263:             </section>
+264:           </>
+265:         )}
+
+### src/app/relatorios/page.tsx
+111:               ["Total pago nas dívidas", money(totals.debtPaid), "Calculado pelos valores pagos nas dívidas"],
+112:               ["Dívidas em aberto", money(totals.debtOpen), "Saldo restante"],
+113:               ["Saldo total da Carteira", money(totals.walletBalance), "Saldos atuais das contas"],
+114:             ].map(([title, value, note]) => <article key={title} style={card}>
+115:               <div style={{ color: "#64748b", fontSize: 14 }}>{title}</div>
+116:               <strong style={{ display: "block", fontSize: 25, margin: "10px 0 6px", overflowWrap: "anywhere" }}>{value}</strong>
+132:                 <span>{label}</span><strong style={{ textAlign: "right" }}>{value}</strong>
+133:               </div>)}
+134:               <p style={{ color: "#64748b", fontSize: 12, marginBottom: 0 }}>O histórico de pagamentos é apresentado separadamente do total pago nas dívidas para evitar dupla contagem.</p>
+135:             </article>
+136: 
+137:             <article style={card}>
+138:               <h2 style={{ marginTop: 0 }}>Saldo por conta</h2>
+139:               {wallets.length === 0 ? <p>Nenhuma conta cadastrada na Carteira.</p> : wallets.map(w => <div key={w.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: "1px solid #edf0f4" }}>
+140:                 <span>{w.name}<small style={{ display: "block", color: "#64748b" }}>{w.account_type}</small></span>
+141:                 <strong>{money(num(w.balance))}</strong>
+142:               </div>)}
+143:               <p style={{ marginBottom: 0, marginTop: 16 }}><a href="/carteira" style={{ color: "#176b52", fontWeight: 700 }}>Gerenciar Carteira →</a></p>
+144:             </article>
+145:           </section>
+146: 
+
+### src/app/servicos/habitos-controle/page.tsx
+2: 
+3: export default function Page() {
+4:   return <ServiceLanding service="habitos" />;
+5: }
+
+### src/components/AppHeader.tsx
+10:   { href: "/dividas", label: "Dívidas" },
+11:   { href: "/financeiro", label: "Financeiro" },
+12:   { href: "/carteira", label: "Carteira" },
+13:   { href: "/planejamento", label: "Planejamento" },
+14:   { href: "/relatorios", label: "Relatórios" },
+15:   { href: "/controle-contas", label: "Controle de contas" },
+16:   { href: "/habitos", label: "Hábitos" },
+17:   { href: "/controle", label: "Controle" },
+18:   { href: "/perfil", label: "Perfil" },
+19: ];
+
+### src/components/HabitControlApp.tsx
+5: import { useCallback, useEffect, useState } from "react";
+6: 
+7: type Mode = "habitos" | "controle";
+8: type Habit = {
+9:   id: string;
+10:   name: string;
+53:   ["lazer", "Lazer"],
+54:   ["compras", "Compras"],
+55:   ["habitos", "Hábitos"],
+56:   ["educacao", "Educação"],
+57:   ["outros", "Outros"],
+58: ];
+60: export default function HabitControlApp({ mode }: { mode: Mode }) {
+61:   const supabase = getSupabaseBrowserClient();
+62:   const isHabits = mode === "habitos";
+63:   const [userId, setUserId] = useState("");
+64:   const [habits, setHabits] = useState<Habit[]>([]);
+65:   const [entries, setEntries] = useState<Entry[]>([]);
+154:   const periodTotal = recentExpenses.reduce((sum, item) => sum + num(item.amount), 0);
+155: 
+156:   // Histórico dos hábitos: inclui gastos informados mesmo quando
+157:   // não existe lançamento financeiro ou conta da Carteira vinculada.
+158:   const recentHabitEntries = entries.filter((entry) => {
+159:     const entryDate = entry.entry_date;
+160:     return (
+180:       amount: expense.amount,
+181:       notes: expense.notes,
+182:       isHabitOnly: false,
+183:     })),
+184:     ...(isHabits
+185:       ? recentHabitEntries
+190:               id: `habit-${entry.id}`,
+191:               expense_date: entry.entry_date,
+192:               name: habit?.name ?? "Gasto registrado em hábito",
+193:               category: habit?.category ?? "outros",
+194:               amount: entry.amount_spent,
+195:               notes: entry.notes,
+196:               isHabitOnly: true,
+197:             };
+198:           })
+199:       : []),
+208:     .filter((item) => item.expense_date === today())
+209:     .reduce((sum, item) => sum + num(item.amount), 0);
+210:   // Total acumulado: considera todos os gastos registrados nos hábitos.
+211:   // Só muda quando um registro é adicionado, editado ou excluído.
+212:   const habitSpend = entries.reduce(
+213:     (sum, item) => sum + num(item.amount_spent),
+236:       const goal = Number(habitGoal.replace(",", "."));
+237:       const usual = Number(habitUsualAmount.replace(",", "."));
+238:       if (!habitName.trim()) throw new Error("Informe o nome do hábito.");
+239:       if (!Number.isFinite(goal) || goal < 0) throw new Error("Informe uma meta válida.");
+240:       if (!Number.isFinite(usual) || usual < 0) throw new Error("Informe um valor habitual válido.");
+241:       const { data, error } = await supabase.from("habit_controls").insert({
+251:       setHabitUsualAmount("0");
+252:       setSelectedHabit(data.id);
+253:       setMessage("Hábito criado.");
+254:       await loadData();
+255:     } catch (error) {
+256:       setMessage(error instanceof Error ? error.message : "Não foi possível criar o hábito.");
+257:     } finally { setSaving(false); }
+258:   }
+259: 
+263:     setMessage("");
+264:     try {
+265:       if (!selectedHabit) throw new Error("Cadastre ou selecione um hábito.");
+266: 
+267:       const amount = Number(habitSpent.replace(",", "."));
+268:       const avoided = Number(habitAvoided.replace(",", ".") || "0");
+269: 
+270:       if (!Number.isFinite(amount) || amount < 0) {
+271:         throw new Error("Informe um gasto real válido.");
+272:       }
+273:       if (!Number.isFinite(avoided) || avoided < 0) {
+274:         throw new Error("Informe um valor evitado válido.");
+275:       }
+276:       if (entryStatus !== "occurred" && amount > 0) {
+277:         throw new Error("Só informe gasto real quando o comportamento aconteceu.");
+278:       }
+279:       if (entryStatus !== "not_occurred" && avoided > 0) {
+280:         throw new Error("O valor que teria gasto só pode ser informado quando o comportamento não aconteceu.");
+281:       }
+282:       if (amount > 0 && !habitAccount) {
+283:         throw new Error("Selecione a conta da Carteira usada para esse gasto real.");
+284:       }
+285:       if (amount > 0 && !wallets.some((wallet) => wallet.id === habitAccount)) {
+286:         throw new Error("A conta selecionada não foi encontrada. Atualize a página e tente novamente.");
+287:       }
+288: 
+289:       // O RPC registra o gasto real e ajusta a Carteira uma única vez.
+290:       // O valor evitado é apenas informativo: não altera contas ou despesas.
+291:       const { error } = await supabase.rpc("save_habit_entry", {
+292:         p_habit_id: selectedHabit,
+308:       setMessage(
+309:         amount > 0
+310:           ? "Registro salvo e gasto real lançado na conta selecionada."
+311:           : avoided > 0
+312:             ? "Registro salvo. O valor evitado foi contabilizado apenas na economia estimada."
+313:             : "Registro do hábito salvo."
+314:       );
+315:       await loadData();
+316:     } catch (error) {
+342:       setExpenseAmount("");
+343:       setExpenseNotes("");
+344:       setMessage("Despesa registrada e saldo da Carteira atualizado.");
+345:       await loadData();
+346:     } catch (error) {
+347:       setMessage(error instanceof Error ? error.message : "Não foi possível registrar a despesa.");
+401:     if (notes === null) return;
+402: 
+403:     if (!window.confirm("Salvar as alterações desta despesa e ajustar a Carteira, se necessário?")) return;
+404: 
+405:     setSaving(true);
+406:     setMessage("");
+435:       });
+436:       if (error) throw error;
+437:       setMessage("Despesa excluída e saldo da Carteira ajustado, quando aplicável.");
+438:       await loadData();
+439:     } catch (error) {
+440:       setMessage(error instanceof Error ? error.message : "Não foi possível excluir a despesa.");
+444:   }
+445: 
+446:   async function editHabitOnlyEntry(entryId: string) {
+447:     const entry = entries.find((item) => item.id === entryId);
+448:     if (!entry) {
+449:       setMessage("Registro de hábito não encontrado. Atualize a página e tente novamente.");
+450:       return;
+451:     }
+452: 
+466: 
+467:     const amountText = window.prompt(
+468:       "Valor gasto (ex.: 25,90):",
+469:       String(num(entry.amount_spent)).replace(".", ",")
+470:     );
+471:     if (amountText === null) return;
+479:     if (notes === null) return;
+480: 
+481:     if (!window.confirm("Salvar este registro de hábito? A Carteira não será alterada.")) return;
+482: 
+483:     setSaving(true);
+484:     setMessage("");
+495: 
+496:       if (error) throw error;
+497:       setMessage("Registro de hábito atualizado. O saldo da Carteira não foi alterado.");
+498:       await loadData();
+499:     } catch (error) {
+500:       setMessage(error instanceof Error ? error.message : "Não foi possível editar o registro de hábito.");
+501:     } finally {
+502:       setSaving(false);
+503:     }
+504:   }
+505: 
+506:   async function deleteHabitOnlyEntry(entryId: string) {
+507:     const entry = entries.find((item) => item.id === entryId);
+508:     if (!entry) {
+509:       setMessage("Registro de hábito não encontrado. Atualize a página e tente novamente.");
+510:       return;
+511:     }
+512: 
+517: 
+518:     if (!window.confirm(
+519:       "Excluir somente este registro do histórico de hábitos? O saldo da Carteira não será alterado. Esta ação não pode ser desfeita."
+520:     )) return;
+521: 
+522:     setSaving(true);
+535:       }
+536: 
+537:       setMessage("Registro de hábito excluído. O saldo da Carteira não foi alterado.");
+538:       await loadData();
+539:     } catch (error) {
+540:       setMessage(error instanceof Error ? error.message : "Não foi possível excluir o registro de hábito.");
+541:     } finally {
+542:       setSaving(false);
+543:     }
+545: 
+546:   async function deactivateHabit(habit: Habit) {
+547:     if (!window.confirm(`Desativar o hábito "${habit.name}"? O histórico será preservado.`)) return;
+548:     setSaving(true);
+549:     try {
+550:       const { error } = await supabase.from("habit_controls")
+553:         .eq("user_id", userId);
+554:       if (error) throw error;
+555:       setMessage("Hábito desativado. O histórico foi preservado.");
+556:       await loadData();
+557:     } catch (error) {
+558:       setMessage(error instanceof Error ? error.message : "Não foi possível desativar o hábito.");
+559:     } finally { setSaving(false); }
+560:   }
+561: 
+570:                 <div>
+571:                   <span className="hc-eyebrow">BEM-ESTAR FINANCEIRO</span>
+572:                   <h1>Hábitos</h1>
+573:                   <p className="hc-habits-motivation">
+574:                     Pequenas escolhas de hoje constroem uma vida financeira mais leve amanhã.
+575:                   </p>
+576:                 </div>
+577:               </header>
+578:               <section className="hc-stats hc-habits-summary" aria-label="Resumo financeiro dos hábitos">
+579:               <article className="hc-stat">
+580:                 <span>Total gasto</span>
+581:                 <strong>{money(habitSpend)}</strong>
+582:                 <small>Gastos reais registrados nos hábitos</small>
+583:               </article>
+584:               <article className="hc-stat">
+585:                 <span>Economizado por não gastar</span>
+586:                 <strong>{money(estimatedSavings)}</strong>
+587:                 <small>Estimativa de gastos evitados. Não altera o saldo da Carteira.</small>
+588:               </article>
+589:               </section>
+590:             </section>
+606:           <section className="hc-stats">
+607:             <article className="hc-stat hc-stat-expenses"><span>Despesas financeiras</span><strong>{money(periodTotal)}</strong><small>Total dos lançamentos financeiros no período selecionado</small></article>
+608:             <article className="hc-stat hc-stat-today"><span>Gastos de hoje</span><strong>{money(todayExpenses)}</strong><small>Total das despesas lançadas com a data de hoje</small></article>
+609:             <article className="hc-stat hc-stat-wallet"><span>Saldo total na Carteira</span><strong>{money(wallets.reduce((s, w) => s + num(w.balance), 0))}</strong><small>Soma dos saldos atuais das contas cadastradas</small></article>
+610:             <article className="hc-stat hc-stat-habits"><span>{isHabits ? "Gastos registrados em hábitos" : "Lançamentos no período"}</span><strong>{isHabits ? money(habitSpend) : recentExpenses.length}</strong><small>{isHabits ? "Valores informados nos registros de hábitos" : "Quantidade de despesas no período selecionado"}</small></article>
+611:           </section>
+612: 
+613:           <section className="hc-card hc-period">
+624:             <div className="hc-columns">
+625:               <section className="hc-card hc-habit-create-card">
+626:                 <h2>Criar um hábito</h2>
+627:                 <p className="hc-muted">Escolha apenas o que faz sentido para você. As sugestões não serão cadastradas até você confirmar.</p>
+628: 
+629:                 <div className="hc-habit-builder">
+630: 
+631:                 <details className="hc-habit-picker">
+632:                   <summary>Selecionar um hábito <span>Escolha uma sugestão para preencher o formulário</span></summary>
+633:                   <div className="hc-habit-suggestions">
+634:                   <strong>Sugestões para começar</strong>
+635:                   <p className="hc-muted">Selecione uma opção para preencher o formulário ou crie seu próprio hábito.</p>
+636:                   <div className="hc-habit-grid">
+637:                     {[
+638:                       { name: "Cafés, lanches e pequenas refeições", category: "alimentacao", icon: "☕", tone: "food" },
+648:                       { name: "Transporte por aplicativo", category: "transporte", icon: "🚗", tone: "transport" },
+649:                       { name: "Combustível e deslocamentos", category: "transporte", icon: "⛽", tone: "transport" },
+650:                       { name: "Gastos com tabaco", category: "outros", icon: "🚭", tone: "wellbeing" },
+651:                       { name: "Gastos com bebidas alcoólicas", category: "outros", icon: "🥤", tone: "wellbeing" },
+652:                       { name: "Tempo de tela e gastos digitais", category: "outros", icon: "📱", tone: "digital" },
+653:                       { name: "Outro hábito ou comportamento pessoal", category: "personalizado", icon: "✨", tone: "personal" },
+654:                     ].map((suggestion) => (
+655:                       <button
+656:                         key={suggestion.name}
+672:                 <details className="hc-habit-create-details">
+673:                   <summary>
+674:                     <span>Cadastrar hábito</span>
+675:                     <span className="hc-habit-create-hint">Clique para abrir ou fechar</span>
+676:                   </summary>
+677:                   <form className="hc-form" onSubmit={addHabit}>
+678:                   <label>Hábitos
+679:                     <input value={habitName} onChange={(e) => setHabitName(e.target.value)} maxLength={80} placeholder="Escolha uma sugestão ou digite seu hábito" required />
+680:                   </label>
+681:                   <label>Categoria
+[Trechos limitados para manter o relatório compacto]
+
+### src/components/ServiceLanding.tsx
+10:   { label: "Finanças", href: "/servicos/financeiro", icon: "◫" },
+11:   { label: "Dívidas", href: "/servicos/dividas", icon: "▤" },
+12:   { label: "Hábitos & Controle", href: "/servicos/habitos-controle", icon: "✳" },
+13: ];
+14: 
+15: const content = {
+34:       {
+35:         number: "03",
+36:         title: "Pagamentos e histórico",
+37:         description: "Consulte os pagamentos registrados e acompanhe seus compromissos financeiros.",
+38:       },
+39:       {
+57:     note: "Você pode usar Finanças mesmo sem ter dívidas. Planejamento, metas e reserva são orientações; os saldos exibidos dependem dos dados registrados.",
+58:   },
+59:   habitos: {
+60:     eyebrow: "HÁBITOS & CONTROLE",
+61:     title: "Pequenos passos para retomar o controle.",
+62:     description:
+63:       "Acompanhe hábitos e comportamentos que deseja mudar, como apostas, consumo de bebidas alcoólicas, compras por impulso e outros padrões que afetam sua rotina ou seu orçamento.",
+64:     icon: "✳",
+65:     accent: "documents",
+66:     features: [
+67:       {
+68:         number: "01",
+69:         title: "Registre seus hábitos",
+70:         description: "Escolha o que deseja acompanhar e registre seus dias de forma simples, privada e sem julgamentos.",
+71:       },
+72:       {
+73:         number: "02",
+74:         title: "Observe gastos e padrões",
+75:         description: "Anote gastos associados aos hábitos e observe tendências ao longo do tempo.",
+76:       },
+77:       {
+78:         number: "03",
+81:       },
+82:     ],
+83:     action: "Acessar Hábitos & Controle",
+84:     href: "/login?next=%2Fapostas",
+85:     note: "Esta ferramenta ajuda no registro e na reflexão pessoal, mas não substitui atendimento profissional. Se um comportamento estiver causando sofrimento ou risco, procure apoio especializado.",
+86:   },

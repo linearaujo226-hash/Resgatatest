@@ -1,0 +1,1889 @@
+"use client";
+
+import AppHeader from "@/components/AppHeader";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { useCallback, useEffect, useState } from "react";
+
+type Mode = "habitos" | "controle";
+type Habit = {
+  id: string;
+  name: string;
+  category: string;
+  goal_amount: number | string;
+  usual_amount?: number | string;
+  active: boolean;
+};
+type Entry = {
+  id: string;
+  habit_id: string;
+  entry_date: string;
+  status: string;
+  amount_spent: number | string;
+  amount_avoided?: number | string;
+  notes: string | null;
+};
+type Expense = {
+  id: string;
+  name: string;
+  category: string;
+  amount: number | string;
+  expense_date: string;
+  notes: string | null;
+  account_id: string | null;
+  habit_entry_id?: string | null;
+};
+type Wallet = {
+  id: string;
+  name: string;
+  balance: number | string;
+};
+
+const today = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+};
+const money = (value: number) =>
+  value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const num = (value: number | string | null | undefined) => Number(value ?? 0);
+const categories = [
+  ["alimentacao", "Alimentação"],
+  ["transporte", "Transporte"],
+  ["casa", "Casa"],
+  ["saude", "Saúde"],
+  ["lazer", "Lazer"],
+  ["compras", "Compras"],
+  ["habitos", "Hábitos"],
+  ["educacao", "Educação"],
+  ["outros", "Outros"],
+];
+
+export default function HabitControlApp({ mode }: { mode: Mode }) {
+  const supabase = getSupabaseBrowserClient();
+  const isHabits = mode === "habitos";
+  const [userId, setUserId] = useState("");
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [period, setPeriod] = useState("30");
+  const [menuOpen, setMenuOpen] = useState(true);
+  const [activePanel, setActivePanel] = useState<"overview" | "habits" | "expenses" | "charts" | "reports">("overview");
+
+  const [habitName, setHabitName] = useState("");
+  const [habitCategory, setHabitCategory] = useState("personalizado");
+  const [habitGoal, setHabitGoal] = useState("0");
+  const [habitUsualAmount, setHabitUsualAmount] = useState("0");
+  const [selectedHabit, setSelectedHabit] = useState("");
+  const [habitSearch, setHabitSearch] = useState("");
+  const [habitCategoryFilter, setHabitCategoryFilter] = useState("todas");
+  const [reportSearch, setReportSearch] = useState("");
+  const [reportCategoryFilter, setReportCategoryFilter] = useState("todas");
+  const [calendarMonth, setCalendarMonth] = useState(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  );
+  const [entryDate, setEntryDate] = useState(today());
+  const [entryStatus, setEntryStatus] = useState("occurred");
+  const [habitSpent, setHabitSpent] = useState("0");
+  const [habitAvoided, setHabitAvoided] = useState("");
+  const [habitAccount, setHabitAccount] = useState("");
+  const [habitNotes, setHabitNotes] = useState("");
+
+  const [expenseName, setExpenseName] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState("alimentacao");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseDate, setExpenseDate] = useState(today());
+  const [expenseAccount, setExpenseAccount] = useState("");
+  const [expenseNotes, setExpenseNotes] = useState("");
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setMessage("");
+    try {
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!auth.user) {
+        window.location.href = "/login";
+        return;
+      }
+      setUserId(auth.user.id);
+
+      const [habitResult, entryResult, expenseResult, walletResult] = await Promise.all([
+        supabase.from("habit_controls")
+          .select("id,name,category,goal_amount,usual_amount,active")
+          .eq("user_id", auth.user.id)
+          .eq("active", true)
+          .order("created_at", { ascending: false }),
+        supabase.from("habit_control_entries")
+          .select("id,habit_id,entry_date,status,amount_spent,amount_avoided,notes")
+          .eq("user_id", auth.user.id)
+          .order("entry_date", { ascending: false })
+          .limit(300),
+        supabase.from("financial_expenses")
+          .select("id,name,category,amount,expense_date,notes,account_id,habit_entry_id")
+          .eq("user_id", auth.user.id)
+          .order("expense_date", { ascending: false })
+          .limit(500),
+        supabase.from("wallet_accounts")
+          .select("id,name,balance")
+          .eq("user_id", auth.user.id)
+          .order("created_at", { ascending: true }),
+      ]);
+      if (habitResult.error) throw habitResult.error;
+      if (entryResult.error) throw entryResult.error;
+      if (expenseResult.error) throw expenseResult.error;
+      if (walletResult.error) throw walletResult.error;
+
+      const loadedHabits = (habitResult.data ?? []) as Habit[];
+      setHabits(loadedHabits);
+      setEntries((entryResult.data ?? []) as Entry[]);
+      setExpenses((expenseResult.data ?? []) as Expense[]);
+      setWallets((walletResult.data ?? []) as Wallet[]);
+      setSelectedHabit((current) =>
+        current && loadedHabits.some((habit) => habit.id === current)
+          ? current : loadedHabits[0]?.id ?? "",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível carregar os dados.");
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase]);
+
+  useEffect(() => { void loadData(); }, [loadData]);
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - Number(period) + 1);
+  const recentExpenses = expenses.filter((item) => {
+    const date = new Date(`${item.expense_date}T12:00:00`);
+    return date >= cutoff && item.expense_date <= today();
+  });
+  const periodTotal = recentExpenses.reduce((sum, item) => sum + num(item.amount), 0);
+
+  // Histórico dos hábitos: inclui gastos informados mesmo quando
+  // não existe lançamento financeiro ou conta da Carteira vinculada.
+  const recentHabitEntries = entries.filter((entry) => {
+    const entryDate = entry.entry_date;
+    return (
+      entry.status === "occurred" &&
+      num(entry.amount_spent) > 0 &&
+      entryDate >= new Date(new Date().setDate(new Date().getDate() - Number(period) + 1)).toLocaleDateString("en-CA") &&
+      entryDate <= today()
+    );
+  });
+
+  const linkedHabitEntryIds = new Set(
+    expenses
+      .filter((expense) => expense.habit_entry_id)
+      .map((expense) => expense.habit_entry_id)
+  );
+
+  const historyRows = [
+    ...recentExpenses.map((expense) => ({
+      id: expense.id,
+      expense_date: expense.expense_date,
+      name: expense.name,
+      category: expense.category,
+      amount: expense.amount,
+      notes: expense.notes,
+      isHabitOnly: false,
+    })),
+    ...(isHabits
+      ? recentHabitEntries
+          .filter((entry) => !linkedHabitEntryIds.has(entry.id))
+          .map((entry) => {
+            const habit = habits.find((item) => item.id === entry.habit_id);
+            return {
+              id: `habit-${entry.id}`,
+              expense_date: entry.entry_date,
+              name: habit?.name ?? "Gasto registrado em hábito",
+              category: habit?.category ?? "outros",
+              amount: entry.amount_spent,
+              notes: entry.notes,
+              isHabitOnly: true,
+            };
+          })
+      : []),
+  ].sort((a, b) => b.expense_date.localeCompare(a.expense_date));
+
+  const historyTotal = historyRows.reduce(
+    (sum, item) => sum + num(item.amount),
+    0
+  );
+  const filteredHistoryRows = historyRows.filter((item) => {
+    const query = reportSearch.trim().toLocaleLowerCase("pt-BR");
+    const matchesSearch =
+      !query ||
+      item.name.toLocaleLowerCase("pt-BR").includes(query) ||
+      item.category.toLocaleLowerCase("pt-BR").includes(query) ||
+      (item.notes ?? "").toLocaleLowerCase("pt-BR").includes(query);
+    const matchesCategory =
+      reportCategoryFilter === "todas" ||
+      item.category === reportCategoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+  const filteredHistoryTotal = filteredHistoryRows.reduce(
+    (sum, item) => sum + num(item.amount),
+    0
+  );
+
+  const exportHistoryCsv = () => {
+    const columns = ["Data", "Descrição", "Categoria", "Valor", "Observações", "Origem"];
+    const escapeCsv = (value: unknown) => {
+      let text = String(value ?? "");
+      // Evita que conteúdo importado seja interpretado como fórmula de planilha.
+      if (/^[=+@\\-\\t\\r]/.test(text)) text = "'" + text;
+      return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const rows = filteredHistoryRows.map((item) => [
+      item.expense_date,
+      item.name,
+      item.category,
+      num(item.amount).toFixed(2).replace(".", ","),
+      item.notes ?? "",
+      item.isHabitOnly ? "Registro de hábito" : "Despesa financeira",
+    ]);
+    const csv = "\\uFEFF" + [columns, ...rows]
+      .map((row) => row.map(escapeCsv).join(";"))
+      .join("\\r\\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `historico-gastos-${today()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const todayExpenses = expenses
+    .filter((item) => item.expense_date === today())
+    .reduce((sum, item) => sum + num(item.amount), 0);
+  // Total acumulado: considera todos os gastos registrados nos hábitos.
+  // Só muda quando um registro é adicionado, editado ou excluído.
+  const habitSpend = entries.reduce(
+    (sum, item) => sum + num(item.amount_spent),
+    0
+  );
+  const selectedHabitEntries = entries.filter((item) => item.habit_id === selectedHabit);
+  const calendarYear = calendarMonth.getFullYear();
+  const calendarMonthIndex = calendarMonth.getMonth();
+  const calendarDays = new Date(calendarYear, calendarMonthIndex + 1, 0).getDate();
+  const calendarFirstWeekday = new Date(calendarYear, calendarMonthIndex, 1).getDay();
+  const calendarMonthPrefix =
+    `${calendarYear}-${String(calendarMonthIndex + 1).padStart(2, "0")}-`;
+  const calendarMonthEntries = selectedHabitEntries.filter(
+    (entry) => entry.entry_date.startsWith(calendarMonthPrefix)
+  );
+  const calendarEntryByDay = new Map(
+    calendarMonthEntries.map((entry) => [
+      Number(entry.entry_date.slice(8, 10)), entry
+    ])
+  );
+  const recordedDays = selectedHabitEntries.length;
+  const occurredDays = selectedHabitEntries.filter((item) => item.status === "occurred").length;
+  const selectedHabitData = habits.find((habit) => habit.id === selectedHabit);
+  const periodStart = cutoff.toISOString().slice(0, 10);
+  const estimatedSavings = entries
+    .filter((item) =>
+      item.entry_date >= periodStart &&
+      item.entry_date <= today() &&
+      item.status === "not_occurred"
+    )
+    .reduce((sum, item) => sum + Math.max(0, num(item.amount_avoided)), 0);
+
+  const todayKey = today();
+  const weekStartDate = new Date();
+  weekStartDate.setHours(12, 0, 0, 0);
+  weekStartDate.setDate(weekStartDate.getDate() - 6);
+  const weekStart = [
+    weekStartDate.getFullYear(),
+    String(weekStartDate.getMonth() + 1).padStart(2, "0"),
+    String(weekStartDate.getDate()).padStart(2, "0"),
+  ].join("-");
+
+  const weekEntries = entries.filter(
+    (entry) => entry.entry_date >= weekStart && entry.entry_date <= todayKey
+  );
+  const todayEntries = entries.filter((entry) => entry.entry_date === todayKey);
+  const todayCompleted = todayEntries.filter(
+    (entry) => entry.status === "occurred"
+  ).length;
+  const weeklyCompleted = weekEntries.filter(
+    (entry) => entry.status === "occurred"
+  ).length;
+  const weeklyConsistency = weekEntries.length
+    ? Math.round((weeklyCompleted / weekEntries.length) * 100)
+    : 0;
+
+  const filteredHabits = habits.filter((habit) => {
+    const matchesName = habit.name
+      .toLocaleLowerCase("pt-BR")
+      .includes(habitSearch.trim().toLocaleLowerCase("pt-BR"));
+    const matchesCategory =
+      habitCategoryFilter === "todas" ||
+      habit.category === habitCategoryFilter;
+    return matchesName && matchesCategory;
+  });
+
+  const selectedMonthDate = new Date();
+  const monthYear = selectedMonthDate.getFullYear();
+  const monthIndex = selectedMonthDate.getMonth();
+  const monthDays = new Date(monthYear, monthIndex + 1, 0).getDate();
+  const monthFirstWeekday = new Date(monthYear, monthIndex, 1).getDay();
+  const monthPrefix =
+    `${monthYear}-${String(monthIndex + 1).padStart(2, "0")}-`;
+
+  const selectedMonthEntries = selectedHabitEntries.filter(
+    (entry) => entry.entry_date.startsWith(monthPrefix)
+  );
+  const monthEntryByDay = new Map(
+    selectedMonthEntries.map((entry) => [
+      Number(entry.entry_date.slice(8, 10)),
+      entry,
+    ])
+  );
+
+  const selectedHabitMonthSpend = selectedMonthEntries.reduce(
+    (sum, entry) => sum + num(entry.amount_spent),
+    0
+  );
+  const selectedHabitGoal = num(selectedHabitData?.goal_amount);
+  const goalProgress = selectedHabitGoal > 0
+    ? Math.min(100, (selectedHabitMonthSpend / selectedHabitGoal) * 100)
+    : 0;
+  const goalRemaining = Math.max(0, selectedHabitGoal - selectedHabitMonthSpend);
+
+  async function addHabit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+    try {
+      const goal = Number(habitGoal.replace(",", "."));
+      const usual = Number(habitUsualAmount.replace(",", "."));
+      if (!habitName.trim()) throw new Error("Informe o nome do hábito.");
+
+      const normalizedName = habitName.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+      const duplicate = habits.some(
+        (habit) =>
+          habit.name.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR") === normalizedName
+      );
+      if (duplicate) {
+        throw new Error("Você já tem um hábito ativo com esse nome. Escolha outro ou desative o hábito existente.");
+      }
+
+      if (!Number.isFinite(goal) || goal < 0) throw new Error("Informe uma meta válida.");
+      if (!Number.isFinite(usual) || usual < 0) throw new Error("Informe um valor habitual válido.");
+      const { data, error } = await supabase.from("habit_controls").insert({
+        user_id: userId,
+        name: habitName.trim(),
+        category: habitCategory,
+        goal_amount: goal,
+        usual_amount: usual,
+      }).select("id").single();
+      if (error) throw error;
+      setHabitName("");
+      setHabitGoal("0");
+      setHabitUsualAmount("0");
+      setSelectedHabit(data.id);
+      setMessage("Hábito criado.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível criar o hábito.");
+    } finally { setSaving(false); }
+  }
+
+  async function saveHabitEntry(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+    try {
+      if (!selectedHabit) throw new Error("Cadastre ou selecione um hábito.");
+
+      const amount = Number(habitSpent.replace(",", "."));
+      const avoided = Number(habitAvoided.replace(",", ".") || "0");
+
+      if (!Number.isFinite(amount) || amount < 0) {
+        throw new Error("Informe um gasto real válido.");
+      }
+      if (!Number.isFinite(avoided) || avoided < 0) {
+        throw new Error("Informe um valor evitado válido.");
+      }
+      if (entryStatus !== "occurred" && amount > 0) {
+        throw new Error("Só informe gasto real quando o comportamento aconteceu.");
+      }
+      if (entryStatus !== "not_occurred" && avoided > 0) {
+        throw new Error("O valor que teria gasto só pode ser informado quando o comportamento não aconteceu.");
+      }
+      if (amount > 0 && !habitAccount) {
+        throw new Error("Selecione a conta da Carteira usada para esse gasto real.");
+      }
+      if (amount > 0 && !wallets.some((wallet) => wallet.id === habitAccount)) {
+        throw new Error("A conta selecionada não foi encontrada. Atualize a página e tente novamente.");
+      }
+
+      // O RPC registra o gasto real e ajusta a Carteira uma única vez.
+      // O valor evitado é apenas informativo: não altera contas ou despesas.
+      const { error } = await supabase.rpc("save_habit_entry", {
+        p_habit_id: selectedHabit,
+        p_entry_date: entryDate,
+        p_status: entryStatus,
+        p_amount_spent: amount,
+        p_notes: habitNotes.trim() || null,
+        p_account_id: entryStatus === "occurred" && amount > 0
+          ? habitAccount
+          : null,
+        p_amount_avoided: avoided,
+      });
+      if (error) throw error;
+
+      setHabitNotes("");
+      setHabitSpent("0");
+      setHabitAvoided("");
+      setHabitAccount("");
+      setMessage(
+        amount > 0
+          ? "Registro salvo e gasto real lançado na conta selecionada."
+          : avoided > 0
+            ? "Registro salvo. O valor evitado foi contabilizado apenas na economia estimada."
+            : "Registro do hábito salvo."
+      );
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível salvar o registro.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addExpense(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+    try {
+      const amount = Number(expenseAmount.replace(",", "."));
+      if (!expenseName.trim()) throw new Error("Informe a descrição da despesa.");
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Informe um valor maior que zero.");
+      if (!expenseAccount) throw new Error("Selecione a conta de onde saiu o dinheiro.");
+      const { error } = await supabase.rpc("register_general_expense", {
+        p_name: expenseName.trim(),
+        p_category: expenseCategory,
+        p_amount: amount,
+        p_expense_date: expenseDate,
+        p_account_id: expenseAccount,
+        p_notes: expenseNotes.trim() || null,
+      });
+      if (error) throw error;
+      setExpenseName("");
+      setExpenseAmount("");
+      setExpenseNotes("");
+      setMessage("Despesa registrada e saldo da Carteira atualizado.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível registrar a despesa.");
+    } finally { setSaving(false); }
+  }
+
+  async function changeExpenseAccount(expense: Expense, accountId: string) {
+    if (accountId === (expense.account_id ?? "")) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const { error } = await supabase.rpc("assign_financial_expense_account", {
+        p_expense_id: expense.id,
+        p_account_id: accountId || null,
+      });
+      if (error) throw error;
+      setMessage("Conta da despesa atualizada e saldos recalculados.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível alterar a conta.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function editExpense(expense: Expense) {
+    const name = window.prompt("Descrição da despesa:", expense.name);
+    if (name === null) return;
+    if (!name.trim()) {
+      setMessage("A descrição não pode ficar vazia.");
+      return;
+    }
+
+    const categoryOptions = categories.map(([key, label]) => `${key} = ${label}`).join("\n");
+    const category = window.prompt(
+      `Categoria (digite a chave):\n${categoryOptions}`,
+      expense.category
+    );
+    if (category === null) return;
+    if (!categories.some(([key]) => key === category.trim())) {
+      setMessage("Categoria inválida. Use uma das chaves apresentadas.");
+      return;
+    }
+
+    const amountText = window.prompt(
+      "Valor da despesa (ex.: 25,90):",
+      String(num(expense.amount)).replace(".", ",")
+    );
+    if (amountText === null) return;
+    const amount = Number(amountText.trim().replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMessage("Informe um valor maior que zero.");
+      return;
+    }
+
+    const notes = window.prompt("Observações (deixe em branco para remover):", expense.notes ?? "");
+    if (notes === null) return;
+
+    if (!window.confirm("Salvar as alterações desta despesa e ajustar a Carteira, se necessário?")) return;
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const { error } = await supabase.rpc("update_financial_expense", {
+        p_expense_id: expense.id,
+        p_name: name.trim(),
+        p_category: category.trim(),
+        p_amount: amount,
+        p_notes: notes.trim() || null,
+      });
+      if (error) throw error;
+      setMessage("Despesa atualizada. O saldo foi ajustado pela diferença do valor.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível editar a despesa.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteExpense(expense: Expense) {
+    if (!window.confirm(
+      `Excluir a despesa "${expense.name}" de ${money(num(expense.amount))}?\n\nSe o valor foi descontado de uma conta, ele será devolvido. Esta ação não pode ser desfeita.`
+    )) return;
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const { error } = await supabase.rpc("delete_financial_expense", {
+        p_expense_id: expense.id,
+      });
+      if (error) throw error;
+      setMessage("Despesa excluída e saldo da Carteira ajustado, quando aplicável.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir a despesa.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function editHabitOnlyEntry(entryId: string) {
+    const entry = entries.find((item) => item.id === entryId);
+    if (!entry) {
+      setMessage("Registro de hábito não encontrado. Atualize a página e tente novamente.");
+      return;
+    }
+
+    if (expenses.some((expense) => expense.habit_entry_id === entry.id)) {
+      setMessage("Este registro está vinculado a uma despesa financeira. Edite a despesa na área financeira.");
+      return;
+    }
+
+    const date = window.prompt("Data do registro (AAAA-MM-DD):", entry.entry_date);
+    if (date === null) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        Number.isNaN(new Date(date + "T12:00:00").getTime()) ||
+        date > today()) {
+      setMessage("Informe uma data válida, no formato AAAA-MM-DD, que não seja futura.");
+      return;
+    }
+
+    const amountText = window.prompt(
+      "Valor gasto (ex.: 25,90):",
+      String(num(entry.amount_spent)).replace(".", ",")
+    );
+    if (amountText === null) return;
+    const amount = Number(amountText.trim().replace(",", "."));
+    if (!Number.isFinite(amount) || amount < 0) {
+      setMessage("Informe um valor igual ou maior que zero.");
+      return;
+    }
+
+    const notes = window.prompt("Observações (deixe em branco para remover):", entry.notes ?? "");
+    if (notes === null) return;
+
+    if (!window.confirm("Salvar este registro de hábito? A Carteira não será alterada.")) return;
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const { error } = await supabase
+        .from("habit_control_entries")
+        .update({
+          entry_date: date,
+          amount_spent: amount,
+          notes: notes.trim() || null,
+        })
+        .eq("id", entry.id)
+        .eq("user_id", userId);
+
+      if (error) throw error;
+      setMessage("Registro de hábito atualizado. O saldo da Carteira não foi alterado.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível editar o registro de hábito.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteHabitOnlyEntry(entryId: string) {
+    const entry = entries.find((item) => item.id === entryId);
+    if (!entry) {
+      setMessage("Registro de hábito não encontrado. Atualize a página e tente novamente.");
+      return;
+    }
+
+    if (expenses.some((expense) => expense.habit_entry_id === entry.id)) {
+      setMessage("Este registro está vinculado a uma despesa financeira. Exclua a despesa pela área financeira.");
+      return;
+    }
+
+    if (!window.confirm(
+      "Excluir somente este registro do histórico de hábitos? O saldo da Carteira não será alterado. Esta ação não pode ser desfeita."
+    )) return;
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const { data, error } = await supabase
+        .from("habit_control_entries")
+        .delete()
+        .eq("id", entry.id)
+        .eq("user_id", userId)
+        .select("id");
+
+      if (error) throw error;
+      if (!data?.length) {
+        throw new Error("Nenhum registro foi excluído. Verifique se a migração 0010 foi aplicada ao Supabase.");
+      }
+
+      setMessage("Registro de hábito excluído. O saldo da Carteira não foi alterado.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir o registro de hábito.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deactivateHabit(habit: Habit) {
+    if (!window.confirm(`Desativar o hábito "${habit.name}"? O histórico será preservado.`)) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("habit_controls")
+        .update({ active: false })
+        .eq("id", habit.id)
+        .eq("user_id", userId);
+      if (error) throw error;
+      setMessage("Hábito desativado. O histórico foi preservado.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível desativar o hábito.");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <main className="hc-page">
+      <AppHeader />
+      <nav id="hc-sidebar" className="hc-sidebar" aria-label="Navegação de Controle e Hábitos">
+        {([
+          ["overview", "▦", "Visão geral"],
+          ["habits", "✓", "Hábitos"],
+          ["expenses", "＋", "Despesas"],
+          ["charts", "▥", "Gráficos"],
+          ["reports", "▤", "Relatórios"],
+        ] as const)
+          .filter(([panel]) => isHabits || panel !== "habits")
+          .map(([panel, icon, label]) => (
+            <button
+              key={panel}
+              type="button"
+              className={`hc-sidebar-item${activePanel === panel ? " is-active" : ""}`}
+              aria-current={activePanel === panel ? "page" : undefined}
+              onClick={() => setActivePanel(panel)}
+            >
+              <span aria-hidden="true">{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+      </nav>
+      <div className="hc-wrap" id="hc-overview">
+        {isHabits ? (
+          <>
+            <section className="hc-habits-top" aria-label="Apresentação e resumo financeiro">
+              <header className="hc-hero hc-habits-hero">
+                <div>
+                  <span className="hc-eyebrow">ORGANIZAÇÃO FINANCEIRA E BEM-ESTAR</span>
+                  <h1>Controle &amp; Hábitos</h1>
+                  <p className="hc-habits-motivation">
+                    Pequenas escolhas de hoje constroem uma vida financeira mais leve amanhã.
+                  </p>
+                </div>
+              </header>
+              <section className="hc-stats hc-habits-summary" aria-label="Resumo financeiro dos hábitos">
+              <article className="hc-stat">
+                <span>Total gasto</span>
+                <strong>{money(habitSpend)}</strong>
+                <small>Gastos reais registrados nos hábitos</small>
+              </article>
+              <article className="hc-stat">
+                <span>Economizado por não gastar</span>
+                <strong>{money(estimatedSavings)}</strong>
+                <small>Estimativa de gastos evitados. Não altera o saldo da Carteira.</small>
+              </article>
+              </section>
+            </section>
+          </>
+        ) : (
+          <header className="hc-hero">
+            <div>
+              <span className="hc-eyebrow">ORGANIZAÇÃO DO DINHEIRO</span>
+              <h1>Controle financeiro</h1>
+              <p>Registre despesas do dia a dia, acompanhe categorias e entenda para onde seu dinheiro está indo.</p>
+            </div>
+            <div className="hc-hero-mark" aria-hidden="true">↗</div>
+          </header>
+        )}
+
+
+        {message && <div className="hc-message" role="status">{message}</div>}
+        {loading ? <section className="hc-card">Carregando seus dados…</section> : <>
+{["overview", "expenses", "charts", "reports"].includes(activePanel) && (
+          <section className="hc-card hc-period">
+            <label htmlFor="hc-period">Período de análise</label>
+            <select id="hc-period" value={period} onChange={(e) => setPeriod(e.target.value)}>
+              <option value="7">Últimos 7 dias</option>
+              <option value="30">Últimos 30 dias</option>
+              <option value="90">Últimos 90 dias</option>
+              <option value="365">Últimos 12 meses</option>
+            </select>
+          </section>
+          )}
+
+          {activePanel === "overview" && (
+          <section className="hc-stats">
+            <article className="hc-stat hc-stat-expenses"><span>Despesas financeiras</span><strong>{money(periodTotal)}</strong><small>Total dos lançamentos financeiros no período selecionado</small></article>
+            <article className="hc-stat hc-stat-today"><span>Gastos de hoje</span><strong>{money(todayExpenses)}</strong><small>Total das despesas lançadas com a data de hoje</small></article>
+            <article className="hc-stat hc-stat-wallet"><span>Saldo total na Carteira</span><strong>{money(wallets.reduce((s, w) => s + num(w.balance), 0))}</strong><small>Soma dos saldos atuais das contas cadastradas</small></article>
+            <article className="hc-stat hc-stat-habits"><span>{isHabits ? "Gastos registrados em hábitos" : "Lançamentos no período"}</span><strong>{isHabits ? money(habitSpend) : recentExpenses.length}</strong><small>{isHabits ? "Valores informados nos registros de hábitos" : "Quantidade de despesas no período selecionado"}</small></article>
+          </section>
+          )}
+
+
+
+          {isHabits && activePanel === "habits" && <>
+            <section className="hc-habit-progress" aria-label="Progresso dos hábitos">
+              <article className="hc-progress-card">
+                <span>Hábitos ativos</span>
+                <strong>{habits.length}</strong>
+                <small>Hábitos disponíveis para acompanhamento</small>
+              </article>
+              <article className="hc-progress-card">
+                <span>Concluídos hoje</span>
+                <strong>{todayCompleted}</strong>
+                <small>{todayEntries.length} {todayEntries.length === 1 ? "registro" : "registros"} feitos hoje</small>
+              </article>
+              <article className="hc-progress-card">
+                <span>Consistência semanal</span>
+                <strong>{weeklyConsistency}%</strong>
+                <small>{weeklyCompleted} ocorrências nos últimos 7 dias com registro</small>
+                <div className="hc-progress-track">
+                  <span style={{ width: `${weeklyConsistency}%` }} />
+                </div>
+              </article>
+            </section>
+
+            <section className="hc-card hc-habit-search">
+              <label>
+                Buscar hábito
+                <input
+                  value={habitSearch}
+                  onChange={(event) => setHabitSearch(event.target.value)}
+                  placeholder="Digite o nome do hábito..."
+                />
+              </label>
+              <label>
+                Filtrar categoria
+                <select
+                  value={habitCategoryFilter}
+                  onChange={(event) => setHabitCategoryFilter(event.target.value)}
+                >
+                  <option value="todas">Todas as categorias</option>
+                  {Array.from(new Set(habits.map((habit) => habit.category))).map((category) => (
+                    <option key={category} value={category}>
+                      {categories.find(([key]) => key === category)?.[1] ?? category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
+
+            <div className="hc-columns">
+              <section className="hc-card hc-habit-create-card" id="hc-habits">
+                <h2>Criar um hábito</h2>
+                <p className="hc-muted">Escolha apenas o que faz sentido para você. As sugestões não serão cadastradas até você confirmar.</p>
+
+                <div className="hc-habit-builder">
+
+                <details className="hc-habit-picker">
+                  <summary>Selecionar um hábito <span>Escolha uma sugestão para preencher o formulário</span></summary>
+                  <div className="hc-habit-suggestions">
+                  <strong>Sugestões para começar</strong>
+                  <p className="hc-muted">Selecione uma opção para preencher o formulário ou crie seu próprio hábito.</p>
+                  <div className="hc-habit-grid">
+                    {[
+                      { name: "Cafés, lanches e pequenas refeições", category: "alimentacao", icon: "☕", tone: "food" },
+                      { name: "Delivery e refeições fora de casa", category: "alimentacao", icon: "🍽️", tone: "food" },
+                      { name: "Pequenas despesas do dia a dia", category: "compras", icon: "🧾", tone: "daily" },
+                      { name: "Compras não planejadas", category: "compras", icon: "🛍️", tone: "shopping" },
+                      { name: "Roupas, calçados e acessórios", category: "compras", icon: "👟", tone: "shopping" },
+                      { name: "Compras parceladas", category: "compras", icon: "💳", tone: "shopping" },
+                      { name: "Assinaturas e serviços recorrentes", category: "lazer", icon: "🔄", tone: "digital" },
+                      { name: "Jogos e compras digitais", category: "lazer", icon: "🎮", tone: "digital" },
+                      { name: "Apostas e jogos de azar", category: "lazer", icon: "🎯", tone: "risk" },
+                      { name: "Passeios e atividades de lazer", category: "lazer", icon: "🌿", tone: "leisure" },
+                      { name: "Transporte por aplicativo", category: "transporte", icon: "🚗", tone: "transport" },
+                      { name: "Combustível e deslocamentos", category: "transporte", icon: "⛽", tone: "transport" },
+                      { name: "Gastos com tabaco", category: "outros", icon: "🚭", tone: "wellbeing" },
+                      { name: "Gastos com bebidas alcoólicas", category: "outros", icon: "🥤", tone: "wellbeing" },
+                      { name: "Tempo de tela e gastos digitais", category: "outros", icon: "📱", tone: "digital" },
+                      { name: "Outro hábito ou comportamento pessoal", category: "personalizado", icon: "✨", tone: "personal" },
+                    ].map((suggestion) => (
+                      <button
+                        key={suggestion.name}
+                        type="button"
+                        className={`hc-habit-suggestion hc-tone-${suggestion.tone}${habitName === suggestion.name ? " is-selected" : ""}`}
+                        onClick={(event) => {
+                          setHabitName(suggestion.name);
+                          setHabitCategory(suggestion.category);
+                          event.currentTarget.closest("details")?.removeAttribute("open");
+                        }}
+                      >
+                        <span className="hc-habit-suggestion-icon" aria-hidden="true">{suggestion.icon}</span><span className="hc-habit-suggestion-label">{suggestion.name}</span><span className="hc-habit-suggestion-arrow" aria-hidden="true">↗</span>
+                      </button>
+                    ))}
+                  </div>
+                  </div>
+                </details>
+
+                <details className="hc-habit-create-details">
+                  <summary>
+                    <span>Cadastrar hábito</span>
+                    <span className="hc-habit-create-hint">Clique para abrir ou fechar</span>
+                  </summary>
+                  <form className="hc-form" onSubmit={addHabit}>
+                  <label>Hábitos
+                    <input value={habitName} onChange={(e) => setHabitName(e.target.value)} maxLength={80} placeholder="Escolha uma sugestão ou digite seu hábito" required />
+                  </label>
+                  <label>Categoria
+                    <select value={habitCategory} onChange={(e) => setHabitCategory(e.target.value)}>
+                      <option value="personalizado">Personalizado</option>
+                      <option value="alimentacao">Alimentação</option>
+                      <option value="compras">Compras</option>
+                      <option value="lazer">Lazer</option>
+                      <option value="transporte">Transporte</option>
+                      <option value="outros">Outro</option>
+                    </select>
+                  </label>
+                  <label>Limite de gastos (R$) — opcional
+                    <input value={habitGoal} onChange={(e) => setHabitGoal(e.target.value)} inputMode="decimal" placeholder="Ex.: 150,00" />
+                  </label>
+                  <label>Valor habitual por ocorrência (R$) — opcional
+                    <input value={habitUsualAmount} onChange={(e) => setHabitUsualAmount(e.target.value)} inputMode="decimal" placeholder="Ex.: 15,00" />
+                  </label>
+                  <p className="hc-muted">Usado somente para estimar a economia nos dias em que o hábito não aconteceu. Não altera o saldo da Carteira.</p>
+                  <p className="hc-muted">A meta é opcional. Você pode acompanhar um hábito sem definir um limite de gastos.</p>
+                  <button disabled={saving}>{saving ? "Salvando…" : "Adicionar hábito"}</button>
+                  </form>
+                </details>
+                </div>
+              </section>
+
+            </div>
+
+            <div className="hc-columns hc-habit-tracking-columns">
+              <section className="hc-card hc-record-card">
+                <h2>Registrar acompanhamento</h2>
+                <p className="hc-muted">Registre seu dia e acompanhe seus hábitos com tranquilidade.</p>
+                <form className="hc-form" onSubmit={saveHabitEntry}>
+                  <label className="hc-record-habit">Hábito
+                    <select value={selectedHabit} onChange={(e) => setSelectedHabit(e.target.value)} required>
+                      <option value="">Selecione</option>
+                      {habits.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="hc-record-date">Data do registro<input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} required /></label>
+                  <fieldset className="hc-status-fieldset">
+                    <legend>Como foi seu dia?</legend>
+                    <p className="hc-muted">Escolha a opção que representa seu acompanhamento.</p>
+                    <div className="hc-status-options">
+                      <label className={`hc-status-option${entryStatus === "occurred" ? " is-selected" : ""}`}>
+                        <input
+                          type="radio"
+                          name="habit-entry-status"
+                          value="occurred"
+                          checked={entryStatus === "occurred"}
+                          onChange={() => {
+                            setEntryStatus("occurred");
+                            setHabitAvoided("");
+                          }}
+                        />
+                        <span className="hc-status-symbol" aria-hidden="true">✓</span>
+                        <span><strong>Aconteceu</strong><small>O comportamento ocorreu.</small></span>
+                      </label>
+                      <label className={`hc-status-option${entryStatus === "not_occurred" ? " is-selected" : ""}`}>
+                        <input
+                          type="radio"
+                          name="habit-entry-status"
+                          value="not_occurred"
+                          checked={entryStatus === "not_occurred"}
+                          onChange={() => {
+                            setEntryStatus("not_occurred");
+                            setHabitSpent("0");
+                            setHabitAvoided("");
+                            setHabitAccount("");
+                          }}
+                        />
+                        <span className="hc-status-symbol" aria-hidden="true">—</span>
+                        <span><strong>Não aconteceu</strong><small>O comportamento não ocorreu.</small></span>
+                      </label>
+                      <label className={`hc-status-option${entryStatus === "prefer_not_to_say" ? " is-selected" : ""}`}>
+                        <input
+                          type="radio"
+                          name="habit-entry-status"
+                          value="prefer_not_to_say"
+                          checked={entryStatus === "prefer_not_to_say"}
+                          onChange={() => {
+                            setEntryStatus("prefer_not_to_say");
+                            setHabitSpent("0");
+                            setHabitAvoided("");
+                            setHabitAccount("");
+                          }}
+                        />
+                        <span className="hc-status-symbol" aria-hidden="true">…</span>
+                        <span><strong>Prefiro não informar</strong><small>Você decide o que compartilhar.</small></span>
+                      </label>
+                    </div>
+                  </fieldset>
+                  <label className="hc-record-amount">Valor gasto real (R$)
+                    <input
+                      value={habitSpent}
+                      onChange={(e) => setHabitSpent(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      disabled={entryStatus !== "occurred"}
+                    />
+                  </label>
+
+                  {entryStatus === "occurred" && (
+                    <>
+                      <label className="hc-record-amount">Conta da Carteira usada
+                        <select
+                          value={habitAccount}
+                          onChange={(e) => setHabitAccount(e.target.value)}
+                          disabled={!wallets.length}
+                        >
+                          <option value="">Selecione uma conta se houve gasto</option>
+                          {wallets.map((wallet) => (
+                            <option key={wallet.id} value={wallet.id}>
+                              {wallet.name} — {money(num(wallet.balance))}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {!wallets.length && (
+                        <p className="hc-muted">
+                          Cadastre uma conta na Carteira para vincular e descontar gastos reais.
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                  {entryStatus === "not_occurred" && (
+                    <>
+                      <label className="hc-record-amount">Quanto teria gasto hoje? (R$)
+                        <input
+                          value={habitAvoided}
+                          onChange={(e) => setHabitAvoided(e.target.value)}
+                          inputMode="decimal"
+                          placeholder="Informe o valor deste dia, se quiser"
+                        />
+                      </label>
+                      <p className="hc-muted">
+                        Valor evitado neste registro: {money(Math.max(0, Number(habitAvoided.replace(",", ".") || "0") || 0))}.
+                        Esse valor pode variar a cada dia e não é descontado nem adicionado à Carteira.
+                      </p>
+                    </>
+                  )}
+
+                  {entryStatus === "prefer_not_to_say" && (
+                    <p className="hc-muted">
+                      Você não precisa informar valores. Nenhum gasto ou economia será estimado neste registro.
+                    </p>
+                  )}
+                  <p className="hc-muted">
+                    Somente gastos reais são lançados nas despesas financeiras. O valor evitado é usado exclusivamente no resumo de economia estimada.
+                  </p>
+                  <label className="hc-record-notes">Observação (opcional)<textarea value={habitNotes} onChange={(e) => setHabitNotes(e.target.value)} maxLength={1000} rows={3} placeholder="Se quiser, registre um comentário." /></label>
+                  <button className="hc-record-submit" disabled={saving || !habits.length}>{saving ? "Salvando…" : "Salvar acompanhamento"}</button>
+                </form>
+              </section>
+
+              <section className="hc-card hc-habits-list-card">
+                <h2>Seus hábitos</h2>
+              {!habits.length ? <p className="hc-muted">Você ainda não cadastrou hábitos. Comece pelos que deseja acompanhar.</p> :
+                !filteredHabits.length ? <p className="hc-muted">Nenhum hábito corresponde à busca e ao filtro selecionados.</p> :
+                <div className="hc-habit-list">{filteredHabits.map((h) => {
+                  const items = entries.filter((e) => e.habit_id === h.id);
+                  const done = items.filter((e) => e.status === "occurred").length;
+                  const monthSpend = items
+                    .filter((e) => e.entry_date.startsWith(monthPrefix))
+                    .reduce((sum, e) => sum + num(e.amount_spent), 0);
+                  const goal = num(h.goal_amount);
+                  const progress = goal > 0 ? Math.min(100, monthSpend / goal * 100) : 0;
+                  return <article className="hc-habit" key={h.id}>
+                    <div className="hc-habit-icon">✳</div>
+                    <div className="hc-habit-main">
+                      <strong>{h.name}</strong>
+                      <span>
+                        {categories.find(([key]) => key === h.category)?.[1] ?? h.category}
+                        {" · "}{items.length} {items.length === 1 ? "registro" : "registros"}
+                        {" · "}{done} {done === 1 ? "ocorrência" : "ocorrências"}
+                      </span>
+                      {goal > 0 && <>
+                        <small>Gasto neste mês: {money(monthSpend)} de {money(goal)}</small>
+                        <div className="hc-progress-track">
+                          <span style={{ width: `${progress}%` }} />
+                        </div>
+                        {monthSpend >= goal
+                          ? <small className="hc-goal-alert">Limite mensal atingido ou ultrapassado.</small>
+                          : progress >= 80
+                            ? <small className="hc-goal-warning">Atenção: você já usou {Math.round(progress)}% do limite.</small>
+                            : <small>Restam {money(goal - monthSpend)} do limite mensal.</small>}
+                      </>}
+                    </div>
+                    <button className="hc-light-button" type="button" disabled={saving} onClick={() => void deactivateHabit(h)}>Desativar</button>
+                  </article>;
+                })}</div>}
+              {selectedHabit && <>
+                <p className="hc-muted hc-selected-habit-summary">
+                  Hábito selecionado: {recordedDays} {recordedDays === 1 ? "registro" : "registros"} no histórico,
+                  {" "}{occurredDays} {occurredDays === 1 ? "ocorrência" : "ocorrências"}.
+                </p>
+                
+              </>}
+              <div className="hc-savings-summary">
+                <span>Economia estimada no período selecionado</span>
+                <strong>{money(estimatedSavings)}</strong>
+                <small>Soma os valores informados em cada dia marcado como “Não aconteceu”. Não representa dinheiro recebido nem saldo bancário.</small>
+              </div>
+              </section>
+            </div>
+          </>}
+
+
+            {activePanel === "expenses" && (
+              <div className="hc-columns">
+<section className="hc-card" id="hc-expenses">
+                <h2>Registrar despesa</h2>
+                <p className="hc-muted">A despesa é salva no histórico financeiro e descontada da conta selecionada.</p>
+                <form className="hc-form" onSubmit={addExpense}>
+                  <label>Descrição<input value={expenseName} onChange={(e) => setExpenseName(e.target.value)} maxLength={120} placeholder="Ex.: mercado, ônibus, farmácia" required /></label>
+                  <label>Categoria
+                    <select value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)}>
+                      {categories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label>Valor (R$)<input value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} inputMode="decimal" placeholder="0,00" required /></label>
+                  <label>Data<input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required /></label>
+                  <label>Conta de origem
+                    <select value={expenseAccount} onChange={(e) => setExpenseAccount(e.target.value)} required>
+                      <option value="">Selecione uma conta</option>
+                      {wallets.map((w) => <option key={w.id} value={w.id}>{w.name} — {money(num(w.balance))}</option>)}
+                    </select>
+                  </label>
+                  <label>Observação opcional<textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} maxLength={1000} rows={3} placeholder="Detalhes que queira guardar" /></label>
+                  <button disabled={saving || !wallets.length}>{saving ? "Salvando…" : "Registrar despesa"}</button>
+                  {!wallets.length && <p className="hc-muted">Cadastre primeiro uma conta na Carteira para registrar uma despesa com atualização de saldo.</p>}
+                </form>
+              </section>
+              </div>
+            )}
+
+            {activePanel === "charts" && (
+              <div className="hc-columns">
+              <section className="hc-card" id="hc-charts">
+                <h2>Gráfico de despesas por categoria</h2>
+                <p className="hc-muted">Valores das despesas registradas no período selecionado.</p>
+                {categories.map(([key, label]) => {
+                  const value = recentExpenses.filter((e) => e.category === key).reduce((sum, e) => sum + num(e.amount), 0);
+                  if (!value) return null;
+                  const width = periodTotal ? Math.min(100, value / periodTotal * 100) : 0;
+                  return <div className="hc-category" key={key}>
+                    <div><span>{label}</span><strong>{money(value)}</strong></div>
+                    <div className="hc-track"><span style={{ width: `${width}%` }} /></div>
+                  </div>;
+                })}
+                {!recentExpenses.length && <p className="hc-muted">Ainda não há despesas neste período.</p>}
+              </section>
+              </div>
+            )}
+          
+
+          {activePanel === "reports" && (
+          <section className="hc-card" id="hc-reports">
+            <h2>Relatórios e histórico de gastos</h2>
+
+            {isHabits && (
+              <div className="hc-report-calendar-controls">
+                <label>
+                  Hábito do calendário
+                  <select
+                    value={selectedHabit}
+                    onChange={(e) => setSelectedHabit(e.target.value)}
+                  >
+                    {habits.map((habit) => (
+                      <option key={habit.id} value={habit.id}>{habit.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="hc-report-month-controls">
+                  <button
+                    className="hc-light-button"
+                    type="button"
+                    aria-label="Mês anterior"
+                    onClick={() => setCalendarMonth(
+                      new Date(calendarYear, calendarMonthIndex - 1, 1)
+                    )}
+                  >← Anterior</button>
+                  <button
+                    className="hc-light-button"
+                    type="button"
+                    onClick={() => setCalendarMonth(
+                      new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+                    )}
+                  >Mês atual</button>
+                  <button
+                    className="hc-light-button"
+                    type="button"
+                    aria-label="Próximo mês"
+                    onClick={() => setCalendarMonth(
+                      new Date(calendarYear, calendarMonthIndex + 1, 1)
+                    )}
+                  >Próximo →</button>
+                </div>
+              </div>
+            )}
+
+            {isHabits && selectedHabit && (
+              <>
+                <p className="hc-muted">
+                  Consulte os registros do hábito selecionado por mês.
+                </p>
+                <div className="hc-calendar-month-nav">
+                  <section className="hc-calendar" aria-label="Calendário mensal do hábito selecionado">
+                  <h3>{selectedHabitData?.name ?? "Hábito"} — {calendarMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</h3>
+                  <div className="hc-calendar-grid hc-calendar-weekdays">
+                    {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((day) => <span key={day}>{day}</span>)}
+                  </div>
+                  <div className="hc-calendar-grid">
+                    {Array.from({ length: calendarFirstWeekday }, (_, index) => <span className="hc-calendar-empty" key={`empty-${index}`} />)}
+                    {Array.from({ length: calendarDays }, (_, index) => {
+                      const day = index + 1;
+                      const key = `${calendarMonthPrefix}${String(day).padStart(2, "0")}`;
+                      const entry = calendarEntryByDay.get(day);
+                      const future = key > todayKey;
+                      const statusClass = entry
+                        ? entry.status === "occurred" ? "is-done"
+                          : entry.status === "not_occurred" ? "is-missed" : "is-private"
+                        : future ? "is-future" : "is-unrecorded";
+                      const label = entry
+                        ? entry.status === "occurred" ? "Concluído"
+                          : entry.status === "not_occurred" ? "Não aconteceu" : "Preferiu não informar"
+                        : future ? "Data futura" : "Sem registro";
+                      return (
+                        <span
+                          key={key}
+                          className={`hc-calendar-day ${statusClass}`}
+                          title={`${day}: ${label}`}
+                          aria-label={`${day}: ${label}`}
+                        >{day}</span>
+                      );
+                    })}
+                  </div>
+                  <div className="hc-calendar-legend">
+                    <span><i className="is-done" /> Concluído</span>
+                    <span><i className="is-missed" /> Não aconteceu</span>
+                    <span><i className="is-unrecorded" /> Sem registro</span>
+                  </div>
+                </section>
+                </div>
+                <p className="hc-muted">
+                  Roxo: preferiu não informar. Dias futuros não possuem registro.
+                </p>
+              </>
+            )}
+
+            <h3>Histórico de gastos</h3>
+            <div className="hc-report-filters">
+              <label>
+                Buscar
+                <input
+                  type="search"
+                  value={reportSearch}
+                  onChange={(e) => setReportSearch(e.target.value)}
+                  placeholder="Descrição, categoria ou observação"
+                />
+              </label>
+              <label>
+                Categoria
+                <select
+                  value={reportCategoryFilter}
+                  onChange={(e) => setReportCategoryFilter(e.target.value)}
+                >
+                  <option value="todas">Todas as categorias</option>
+                  {categories.map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="hc-light-button"
+                type="button"
+                onClick={() => {
+                  setReportSearch("");
+                  setReportCategoryFilter("todas");
+                }}
+              >Limpar filtros</button>
+              <button
+                className="hc-light-button"
+                type="button"
+                onClick={exportHistoryCsv}
+                disabled={filteredHistoryRows.length === 0}
+              >Exportar CSV</button>
+            </div>
+            <p className="hc-muted">
+              {filteredHistoryRows.length} de {historyRows.length} registros exibidos.
+            </p>
+
+            {filteredHistoryRows.length === 0
+              ? <p className="hc-muted">Nenhum registro corresponde aos filtros neste período.</p>
+              : <div className="hc-table-wrap"><table className="hc-table">
+                <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Ações</th></tr></thead>
+                <tbody>{filteredHistoryRows.map((e) => <tr key={e.id}>
+                  <td>{new Date(`${e.expense_date}T12:00:00`).toLocaleDateString("pt-BR")}</td>
+                  <td>
+                    {e.name}
+                    {e.notes && <small className="hc-note">{e.notes}</small>}
+                    {e.isHabitOnly && <small className="hc-note">Informado no hábito; não lançado na Carteira</small>}
+                  </td>
+                  <td>{categories.find(([key]) => key === e.category)?.[1] ?? e.category}</td>
+                  <td className="hc-amount">{money(num(e.amount))}</td>
+                  <td>
+                    <div className="hc-expense-actions">
+                      <button className="hc-light-button" type="button" disabled={saving} onClick={() => {
+                        if (e.isHabitOnly) {
+                          void editHabitOnlyEntry(e.id.slice("habit-".length));
+                          return;
+                        }
+                        const expense = expenses.find((item) => item.id === e.id);
+                        if (expense) void editExpense(expense);
+                      }}>Editar</button>
+                      <button className="hc-delete-button" type="button" disabled={saving} onClick={() => {
+                        if (e.isHabitOnly) {
+                          void deleteHabitOnlyEntry(e.id.slice("habit-".length));
+                          return;
+                        }
+                        const expense = expenses.find((item) => item.id === e.id);
+                        if (expense) void deleteExpense(expense);
+                      }}>Excluir</button>
+                    </div>
+                  </td>
+                </tr>)}</tbody>
+                <tfoot><tr>
+                  <td colSpan={3}><strong>Total exibido no histórico</strong></td>
+                  <td className="hc-amount"><strong>{money(filteredHistoryTotal)}</strong></td>
+                  <td></td>
+                </tr></tfoot>
+              </table></div>}
+          </section>
+          )}
+          <p className="hc-footnote">Os resumos usam os lançamentos de despesas. Pagamentos de dívidas continuam separados para evitar contabilizar a mesma saída duas vezes.</p>
+        </>}
+      </div>
+
+      <style jsx>{`
+        /* Menu horizontal responsivo */
+        .hc-sidebar {
+          position: relative;
+          z-index: 2;
+          width: 100%;
+          max-width: 1180px;
+          margin: 4px auto 12px;
+          padding: 6px 8px;
+          display: flex;
+          flex-direction: row;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 6px;
+          box-sizing: border-box;
+          border: 1px solid #d5e3f4;
+          border-radius: 14px;
+          background: rgba(255,255,255,.97);
+          box-shadow: 0 4px 12px rgba(28,64,110,.07);
+        }
+
+        .hc-sidebar-item {
+          flex: 0 1 auto;
+          min-width: 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          padding: 9px 12px;
+          border: 0;
+          border-radius: 10px;
+          background: transparent;
+          font: inherit;
+          font-size: 14px;
+          font-weight: 700;
+          white-space: nowrap;
+          cursor: pointer;
+          transition: background .18s ease, color .18s ease;
+        }
+
+        .hc-sidebar-item:nth-of-type(1) { color: #2563eb; }
+        .hc-sidebar-item:nth-of-type(2) { color: #16803d; }
+        .hc-sidebar-item:nth-of-type(3) { color: #c05a12; }
+        .hc-sidebar-item:nth-of-type(4) { color: #7c3aed; }
+        .hc-sidebar-item:nth-of-type(5) { color: #0e7490; }
+
+        .hc-sidebar-item:hover,
+        .hc-sidebar-item:focus-visible {
+          background: #eef4ff;
+          outline-offset: 2px;
+        }
+
+        .hc-sidebar-item.is-active {
+          background: #e8efff;
+          color: #234fc5;
+          box-shadow: inset 0 0 0 1px #c8d8ff;
+        }
+
+        .hc-sidebar a {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 9px 10px;
+          border-radius: 10px;
+          color: #334b68;
+          text-decoration: none;
+          font-size: 14px;
+          font-weight: 700;
+        }
+
+        .hc-sidebar a:hover,
+        .hc-sidebar a:focus-visible {
+          background: #eaf3ff;
+          color: #174b8b;
+          outline-color: #4b83c3;
+        }
+
+        @media (max-width: 600px) {
+          .hc-sidebar {
+            margin: 2px auto 10px;
+            padding: 6px;
+            gap: 4px;
+            border-radius: 12px;
+          }
+
+          .hc-sidebar-item {
+            flex: 1 1 auto;
+            padding: 9px 8px;
+            gap: 5px;
+            font-size: 13px;
+          }
+        }
+
+        @media (max-width: 360px) {
+          .hc-sidebar-item {
+            flex: 1 1 40%;
+            white-space: normal;
+            text-align: center;
+          }
+        }
+        #hc-overview, #hc-habits, #hc-expenses, #hc-charts, #hc-reports {
+          scroll-margin-top: 90px;
+        }
+        #hc-charts .hc-category { margin-top: 15px; }
+        @media (max-width: 600px) {
+          .hc-sidebar-toggle { top: 82px; left: 10px; }
+          .hc-sidebar {
+            top: 132px;
+            left: 10px;
+            width: min(245px, calc(100vw - 32px));
+            max-height: calc(100vh - 150px);
+          }
+        }
+
+        .hc-page{min-height:100vh;background:linear-gradient(180deg,#f0f7ff 0%,#f7f9ff 42%,#f3f6fb 100%);color:#172033;padding:0 18px 48px}
+        .hc-wrap{max-width:1180px;margin:0 auto}
+        .hc-hero{margin:24px 0 18px;padding:clamp(22px,4vw,38px);border-radius:24px;background:linear-gradient(120deg,#d9f8eb 0%,#e0edff 55%,#f0e7ff 100%);border:1px solid #d8e7f8;display:flex;justify-content:space-between;align-items:center;gap:20px}
+        .hc-habits-hero{background:linear-gradient(115deg,#d9f8eb 0%,#dcecff 52%,#eee5ff 100%);border-color:#d1e5f5;box-shadow:0 10px 28px #4169a20f}
+        .hc-habits-hero h1{color:#183b68}
+        .hc-habits-motivation{font-size:15px;line-height:1.65}
+        .hc-habits-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
+        .hc-habits-summary>.hc-stat:first-child{background:linear-gradient(145deg,#ffffff 0%,#e8f3ff 100%);border-color:#c9e0fb}
+        .hc-habits-summary>.hc-stat:first-child>span{color:#2864a5}
+        .hc-habits-summary>.hc-stat:first-child>strong{color:#174b8b}
+        .hc-habits-summary>.hc-stat:last-child{background:linear-gradient(145deg,#ffffff 0%,#e5f8eb 100%);border-color:#c5e9d0}
+        .hc-habits-summary>.hc-stat:last-child>span{color:#287747}
+        .hc-habits-summary>.hc-stat:last-child>strong{color:#17653a}
+        .hc-habits-summary>.hc-stat{padding:22px;border-radius:20px;box-shadow:0 8px 24px #19375b0d}
+        .hc-habits-summary>.hc-stat small{line-height:1.55}
+        .hc-eyebrow{font-size:11px;letter-spacing:1.4px;font-weight:800;color:#08765e}
+        h1{font-size:clamp(30px,5vw,44px);letter-spacing:-1.4px;line-height:1.12;margin:10px 0}
+        .hc-hero p{max-width:680px;color:#53647a;margin:0}
+        .hc-hero-mark{width:74px;height:74px;flex:0 0 74px;border-radius:22px;display:grid;place-items:center;background:#0f766e;color:white;font-size:38px}
+        .hc-switch{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+        .hc-switch a{padding:10px 15px;border-radius:11px;background:white;border:1px solid #dbe4ef;color:#334155;font-weight:750;text-decoration:none}
+        .hc-switch a.selected{background:#0f766e;color:white;border-color:#0f766e}
+        .hc-habit-suggestions{margin:16px 0 20px;padding:16px;border:1px solid #e1e8f0;border-radius:14px;background:#f8fafc}
+        .hc-habit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+        .hc-habit-suggestion{display:flex;align-items:center;gap:7px;text-align:left;padding:10px 12px;border:1px solid #dbe4ef;border-radius:10px;background:white;color:#334155;font-size:13px;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s}
+        .hc-habit-suggestion:hover{border-color:#0f766e;background:#f0fdfa}
+        .hc-habit-suggestion span{color:#0f766e;font-size:17px;font-weight:700}
+        @media(max-width:640px){.hc-habit-grid{grid-template-columns:1fr}.hc-habit-suggestions{padding:12px}}
+        .hc-message{padding:13px 16px;border-radius:12px;background:#e7f7ee;border:1px solid #bce8cd;color:#17643b;margin:0 0 16px;overflow-wrap:anywhere}
+        .hc-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:15px}
+        .hc-stat,.hc-card{background:white;border:1px solid #e1e8f0;border-radius:17px;box-shadow:0 5px 18px #14213d06}
+        .hc-stat{padding:19px;min-width:0}.hc-stat span,.hc-stat small{display:block;color:#64748b;font-size:12px;font-weight:700}.hc-stat strong{display:block;margin:8px 0;font-size:clamp(20px,2.6vw,28px);overflow-wrap:anywhere}.hc-stat small{font-weight:500}
+        .hc-card{padding:clamp(17px,3vw,25px);margin-bottom:16px;min-width:0}
+        .hc-card h2{font-size:19px;margin:0 0 8px}.hc-muted{color:#64748b;font-size:13px}
+        .hc-period{display:flex;align-items:center;gap:12px}.hc-period label{font-weight:700}.hc-period select{max-width:230px}
+        .hc-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+        .hc-form{display:grid;gap:13px;margin-top:16px}.hc-form label{display:grid;gap:6px;font-size:13px;font-weight:750;color:#475569}
+        input,select,textarea{width:100%;min-width:0;border:1px solid #cbd5e1;border-radius:10px;padding:11px 12px;background:#fff;color:#172033;font:inherit}
+        input:focus,select:focus,textarea:focus{outline:2px solid #9ddbc9;outline-offset:1px}
+        button{border:0;border-radius:10px;padding:12px 16px;background:#0f766e;color:white;font-weight:800;cursor:pointer}
+        button:disabled{opacity:.6;cursor:not-allowed}.hc-light-button{background:#edf3f8;color:#334155;padding:9px 12px;font-size:12px}
+        .hc-habit-list{display:grid;gap:10px}.hc-habit{display:flex;align-items:center;gap:13px;border:1px solid #e6ebf2;border-radius:13px;padding:13px;min-width:0}
+        .hc-habit-icon{width:42px;height:42px;flex:0 0 42px;border-radius:13px;background:#e7f6ef;color:#08765e;display:grid;place-items:center;font-size:22px}
+        .hc-habit-main{flex:1;min-width:0}.hc-habit-main strong,.hc-habit-main span,.hc-habit-main small{display:block;overflow-wrap:anywhere}.hc-habit-main span,.hc-habit-main small{font-size:12px;color:#64748b}
+        .hc-category{margin:17px 0}.hc-category>div:first-child{display:flex;justify-content:space-between;gap:10px;font-size:13px}.hc-track{height:8px;background:#edf2f7;border-radius:20px;margin-top:8px;overflow:hidden}.hc-track span{height:100%;display:block;background:#159477;border-radius:20px}
+        .hc-table-wrap{overflow-x:auto}.hc-table{border-collapse:collapse;width:100%;text-align:left;font-size:13px}.hc-table th,.hc-table td{padding:13px 11px;border-bottom:1px solid #e8edf3;white-space:nowrap}.hc-table th{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.5px}.hc-table td:nth-child(2){white-space:normal;min-width:160px}.hc-amount{font-weight:800;color:#b45309}.hc-note{display:block;color:#64748b;font-size:11px;white-space:normal}.hc-footnote{color:#64748b;font-size:12px;text-align:center;padding:4px 0 18px}.hc-expense-actions{display:flex;gap:6px}.hc-delete-button{background:#fee2e2;color:#991b1b;padding:9px 12px;font-size:12px}.hc-table select{max-width:220px;min-width:130px;border:1px solid #dbe4ef;border-radius:8px;padding:8px;background:white;color:#334155}.hc-table tfoot td{background:#f8fafc;padding-top:16px;padding-bottom:16px}
+        @media(max-width:850px){.hc-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.hc-columns{grid-template-columns:1fr}}
+        @media(max-width:520px){.hc-habits-summary{grid-template-columns:minmax(0,1fr);gap:10px}.hc-habits-summary>.hc-stat{padding:18px}.hc-habits-motivation{font-size:14px}.hc-page{padding-inline:10px}.hc-hero{align-items:flex-start;padding:22px 18px}.hc-hero-mark{width:48px;height:48px;flex-basis:48px;border-radius:14px;font-size:26px}.hc-stat{padding:14px}.hc-stat small{line-height:1.4}.hc-period{align-items:flex-start;flex-direction:column}.hc-period select{max-width:none}.hc-habit{flex-wrap:wrap}.hc-habit-main{min-width:calc(100% - 65px)}.hc-light-button{margin-left:54px}}
+
+        .hc-habits-top{
+          display:grid;
+          grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);
+          align-items:stretch;
+          gap:16px;
+          margin:24px 0 20px;
+        }
+        .hc-habits-top .hc-habits-hero{
+          margin:0;
+          min-width:0;
+          padding:clamp(20px,2.4vw,30px);
+          min-height:0;
+        }
+        .hc-habits-top .hc-habits-hero h1{
+          font-size:clamp(28px,3vw,38px);
+          margin:9px 0;
+        }
+        .hc-habits-top .hc-habits-motivation{
+          font-size:13px;
+          line-height:1.55;
+        }
+        .hc-habits-top .hc-habits-summary{
+          min-width:0;
+          margin:0;
+          gap:10px;
+          align-self:stretch;
+        }
+        .hc-habits-top .hc-habits-summary>.hc-stat{
+          min-width:0;
+          padding:16px;
+          border-radius:17px;
+          overflow-wrap:anywhere;
+        }
+        .hc-habits-top .hc-habits-summary>.hc-stat>span{
+          display:block;
+          font-size:12px;
+          line-height:1.4;
+        }
+        .hc-habits-top .hc-habits-summary>.hc-stat>strong{
+          display:block;
+          font-size:clamp(20px,2.2vw,27px);
+          margin:9px 0;
+          overflow-wrap:anywhere;
+        }
+        .hc-habits-top .hc-habits-summary>.hc-stat>small{
+          display:block;
+          font-size:11px;
+          line-height:1.5;
+        }
+        @media(max-width:900px){
+          .hc-habits-top{grid-template-columns:minmax(0,1fr)}
+          .hc-habits-top .hc-habits-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+        }
+        @media(max-width:520px){
+          .hc-habits-top{gap:10px;margin-top:16px}
+          .hc-habits-top .hc-habits-hero{padding:20px 17px}
+          .hc-habits-top .hc-habits-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+          .hc-habits-top .hc-habits-summary>.hc-stat{padding:12px}
+          .hc-habits-top .hc-habits-summary>.hc-stat>strong{font-size:20px}
+          .hc-habits-top .hc-habits-summary>.hc-stat>small{font-size:10px}
+        }
+
+
+        /* CORES DOS CARDS FINANCEIROS */
+        .hc-stat-expenses {
+          background: linear-gradient(145deg, #ffffff 0%, #e5efff 100%) !important;
+          border: 1px solid #b9d2ff !important;
+          box-shadow: 0 9px 24px rgba(37, 99, 235, .10);
+        }
+        .hc-stat-expenses > span { color: #285bb5 !important; }
+        .hc-stat-expenses > strong { color: #1747a0 !important; }
+
+        .hc-stat-today {
+          background: linear-gradient(145deg, #ffffff 0%, #fff0dc 100%) !important;
+          border: 1px solid #ffd4a3 !important;
+          box-shadow: 0 9px 24px rgba(234, 120, 25, .10);
+        }
+        .hc-stat-today > span { color: #b85a13 !important; }
+        .hc-stat-today > strong { color: #98420b !important; }
+
+        .hc-stat-wallet {
+          background: linear-gradient(145deg, #ffffff 0%, #ddf8e8 100%) !important;
+          border: 1px solid #aee5c3 !important;
+          box-shadow: 0 9px 24px rgba(22, 130, 72, .10);
+        }
+        .hc-stat-wallet > span { color: #237847 !important; }
+        .hc-stat-wallet > strong { color: #126237 !important; }
+
+        .hc-stat-habits {
+          background: linear-gradient(145deg, #ffffff 0%, #f0e7ff 100%) !important;
+          border: 1px solid #d4bfff !important;
+          box-shadow: 0 9px 24px rgba(124, 58, 237, .10);
+        }
+        .hc-stat-habits > span { color: #7541b5 !important; }
+        .hc-stat-habits > strong { color: #5b21a7 !important; }
+
+        .hc-stat-expenses,
+        .hc-stat-today,
+        .hc-stat-wallet,
+        .hc-stat-habits {
+          border-radius: 18px;
+          transition: transform .18s ease, box-shadow .18s ease;
+        }
+        @media (hover: hover) {
+          .hc-stat-expenses:hover,
+          .hc-stat-today:hover,
+          .hc-stat-wallet:hover,
+          .hc-stat-habits:hover {
+            transform: translateY(-3px);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .hc-stat-expenses,
+          .hc-stat-today,
+          .hc-stat-wallet,
+          .hc-stat-habits { transition: none; }
+        }
+
+
+        /* Sugestões de hábitos: cartões coloridos e acessíveis */
+        .hc-habit-suggestions{
+          margin:16px 0 20px;
+          padding:20px;
+          border:1px solid #e2e8f0;
+          border-radius:20px;
+          background:linear-gradient(145deg,#fbfdff,#f5f8fc);
+        }
+        .hc-habit-suggestions>strong{
+          display:block;
+          color:#183b68;
+          font-size:17px;
+          letter-spacing:-.2px;
+        }
+        .hc-habit-suggestions>.hc-muted{
+          margin:7px 0 16px;
+          line-height:1.6;
+        }
+        .hc-habit-grid{
+          display:grid;
+          grid-template-columns:repeat(2,minmax(0,1fr));
+          gap:11px;
+          margin-top:12px;
+        }
+        .hc-habit-suggestion{
+          display:flex;
+          align-items:center;
+          gap:11px;
+          min-width:0;
+          min-height:70px;
+          padding:12px;
+          border:1px solid var(--suggestion-border,#dbe4ef);
+          border-radius:15px;
+          background:var(--suggestion-bg,#fff);
+          color:#26364b;
+          text-align:left;
+          font-size:13px;
+          font-weight:650;
+          line-height:1.45;
+          cursor:pointer;
+          box-shadow:0 3px 10px #183b6808;
+          transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+        }
+        .hc-habit-suggestion-icon{
+          display:grid;
+          place-items:center;
+          width:40px;
+          height:40px;
+          flex:0 0 40px;
+          border:1px solid var(--suggestion-border,#dbe4ef);
+          border-radius:12px;
+          background:var(--suggestion-icon-bg,#fff);
+          font-size:21px;
+        }
+        .hc-habit-suggestion-label{flex:1;min-width:0;overflow-wrap:anywhere}
+        .hc-habit-suggestion-arrow{
+          flex:0 0 auto;
+          color:var(--suggestion-accent,#64748b);
+          font-size:17px;
+          opacity:.65;
+        }
+        .hc-tone-food{--suggestion-bg:#fff8ed;--suggestion-border:#f4d8ad;--suggestion-icon-bg:#ffedd5;--suggestion-accent:#b45309}
+        .hc-tone-daily{--suggestion-bg:#f0f9ff;--suggestion-border:#bae6fd;--suggestion-icon-bg:#dff3ff;--suggestion-accent:#0369a1}
+        .hc-tone-shopping{--suggestion-bg:#fdf4ff;--suggestion-border:#f0c8f8;--suggestion-icon-bg:#fae8ff;--suggestion-accent:#a21caf}
+        .hc-tone-digital{--suggestion-bg:#eef2ff;--suggestion-border:#c7d2fe;--suggestion-icon-bg:#e0e7ff;--suggestion-accent:#4338ca}
+        .hc-tone-risk{--suggestion-bg:#fff1f2;--suggestion-border:#fecdd3;--suggestion-icon-bg:#ffe4e6;--suggestion-accent:#be123c}
+        .hc-tone-leisure{--suggestion-bg:#ecfdf5;--suggestion-border:#a7f3d0;--suggestion-icon-bg:#d1fae5;--suggestion-accent:#047857}
+        .hc-tone-transport{--suggestion-bg:#f0fdfa;--suggestion-border:#99f6e4;--suggestion-icon-bg:#ccfbf1;--suggestion-accent:#0f766e}
+        .hc-tone-wellbeing{--suggestion-bg:#f8fafc;--suggestion-border:#cbd5e1;--suggestion-icon-bg:#e2e8f0;--suggestion-accent:#475569}
+        .hc-tone-personal{--suggestion-bg:#faf5ff;--suggestion-border:#ddd6fe;--suggestion-icon-bg:#ede9fe;--suggestion-accent:#7c3aed}
+        .hc-habit-suggestion.is-selected{
+          border-color:var(--suggestion-accent);
+          box-shadow:0 0 0 2px color-mix(in srgb,var(--suggestion-accent) 18%,transparent);
+        }
+        @media(hover:hover) and (pointer:fine){
+          .hc-habit-suggestion:hover{
+            transform:translateY(-2px);
+            border-color:var(--suggestion-accent);
+            box-shadow:0 8px 18px #183b6812;
+          }
+        }
+        .hc-habit-suggestion:focus-visible{
+          outline:3px solid #2563eb;
+          outline-offset:3px;
+        }
+        @media(max-width:640px){
+          .hc-habit-grid{grid-template-columns:1fr;gap:9px}
+          .hc-habit-suggestions{padding:14px;border-radius:16px}
+          .hc-habit-suggestion{min-height:64px;padding:10px}
+        }
+        @media(prefers-reduced-motion:reduce){
+          .hc-habit-suggestion{transition:none}
+        }
+
+        /* HABITOS VISUAL V2 */
+        .hc-page{
+          background:linear-gradient(180deg,#eef6ff 0%,#f7f9ff 42%,#f3f7f5 100%);
+        }
+        .hc-habits-hero{
+          position:relative;
+          overflow:hidden;
+          background:linear-gradient(120deg,#d8f8eb 0%,#dcecff 52%,#eee3ff 100%);
+          border:1px solid #d2e5f5;
+          box-shadow:0 14px 35px rgba(40,75,125,.10);
+        }
+        .hc-habits-hero h1{
+          color:#173c70;
+          font-weight:850;
+          letter-spacing:-1.5px;
+        }
+        .hc-habits-hero .hc-eyebrow{
+          display:inline-block;
+          padding:7px 11px;
+          border-radius:999px;
+          background:rgba(255,255,255,.72);
+          color:#176c58;
+        }
+        .hc-habits-motivation{
+          color:#435873;
+          font-size:15px;
+          line-height:1.7;
+        }
+        .hc-habits-summary>.hc-stat{
+          position:relative;
+          overflow:hidden;
+          border-radius:21px;
+          transition:transform .18s ease,box-shadow .18s ease;
+        }
+        .hc-habits-summary>.hc-stat:first-child{
+          background:linear-gradient(145deg,#fff 0%,#e4f0ff 100%);
+          border:1px solid #bfd9fb;
+          box-shadow:0 10px 26px rgba(36,103,183,.09);
+        }
+        .hc-habits-summary>.hc-stat:first-child>span{color:#2864a5}
+        .hc-habits-summary>.hc-stat:first-child>strong{color:#174b8b}
+        .hc-habits-summary>.hc-stat:last-child{
+          background:linear-gradient(145deg,#fff 0%,#def8e8 100%);
+          border:1px solid #bde7ce;
+          box-shadow:0 10px 26px rgba(32,130,78,.08);
+        }
+        .hc-habits-summary>.hc-stat:last-child>span{color:#287747}
+        .hc-habits-summary>.hc-stat:last-child>strong{color:#17653a}
+        .hc-habits-summary>.hc-stat small{
+          line-height:1.6;
+          color:#52657b;
+        }
+        @media(hover:hover){
+          .hc-habits-summary>.hc-stat:hover{
+            transform:translateY(-3px);
+            box-shadow:0 15px 32px rgba(36,75,120,.13);
+          }
+        }
+        @media(prefers-reduced-motion:reduce){
+          .hc-habits-summary>.hc-stat{transition:none}
+        }
+
+        /* HABITOS CARDS RESPONSIVOS */
+        .hc-habits-summary {
+          display:grid;
+          grid-template-columns:repeat(2,minmax(0,1fr));
+          gap:12px;
+          width:100%;
+          min-width:0;
+        }
+        .hc-habits-summary>.hc-stat {
+          min-width:0;
+          max-width:100%;
+          box-sizing:border-box;
+          overflow-wrap:anywhere;
+        }
+        .hc-habits-summary>.hc-stat>span {
+          line-height:1.45;
+          overflow-wrap:anywhere;
+        }
+        .hc-habits-summary>.hc-stat>strong {
+          display:block;
+          max-width:100%;
+          font-size:clamp(1.25rem,3vw,1.8rem);
+          line-height:1.25;
+          overflow-wrap:anywhere;
+          word-break:normal;
+        }
+        .hc-habits-summary>.hc-stat small {
+          display:block;
+          line-height:1.5;
+          overflow-wrap:anywhere;
+        }
+        @media(max-width:480px) {
+          .hc-habits-summary { gap:8px; }
+          .hc-habits-summary>.hc-stat { padding:12px; }
+          .hc-habits-summary>.hc-stat>strong { font-size:clamp(1.1rem,5vw,1.45rem); }
+        }
+        @media(max-width:340px) {
+          .hc-habits-summary { grid-template-columns:minmax(0,1fr); }
+        }
+
+
+        .hc-habit-progress {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+          margin: 0 0 16px;
+        }
+        .hc-progress-card {
+          min-width: 0;
+          padding: 18px;
+          border: 1px solid #dbe7f3;
+          border-radius: 16px;
+          background: #fff;
+          box-shadow: 0 5px 18px #14213d06;
+        }
+        .hc-progress-card > span,
+        .hc-progress-card > small { display: block; color: #64748b; font-size: 12px; }
+        .hc-progress-card > span { font-weight: 750; }
+        .hc-progress-card > strong { display: block; margin: 7px 0; color: #174b8b; font-size: 27px; }
+        .hc-progress-track { height: 7px; margin-top: 10px; overflow: hidden; border-radius: 10px; background: #e8eef5; }
+        .hc-progress-track > span { display: block; height: 100%; border-radius: inherit; background: #159477; }
+        .hc-habit-search { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+        .hc-habit-search label { display: grid; gap: 6px; color: #475569; font-size: 13px; font-weight: 750; }
+        .hc-goal-alert { color: #b91c1c !important; font-weight: 800; }
+        .hc-goal-warning { color: #b45309 !important; font-weight: 750; }
+        .hc-calendar { margin-top: 18px; padding: 15px; border: 1px solid #e1e8f0; border-radius: 14px; background: #fbfdff; }
+        .hc-calendar h3 { margin: 0 0 12px; color: #1d4ed8; font-size: 15px; }
+        .hc-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+        .hc-calendar-weekdays { margin-bottom: 6px; }
+        .hc-calendar-weekdays > span { padding: 5px 0; color: #64748b; text-align: center; font-size: 11px; font-weight: 750; }
+        .hc-calendar-day { display: grid; place-items: center; min-height: 34px; border: 1px solid #e2e8f0; border-radius: 8px; background: white; color: #334155; font-size: 12px; }
+        .hc-calendar-day.is-done { border-color: #86d5ad; background: #dcfce7; color: #166534; }
+        .hc-calendar-day.is-missed { border-color: #fca5a5; background: #fee2e2; color: #991b1b; }
+        .hc-calendar-day.is-private { border-color: #c4b5fd; background: #ede9fe; color: #5b21b6; }
+        .hc-calendar-day.is-unrecorded { background: #f1f5f9; color: #64748b; }
+        .hc-calendar-day.is-future { background: #fff; color: #cbd5e1; }
+        .hc-calendar-empty { min-height: 34px; }
+        .hc-calendar-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; color: #64748b; font-size: 11px; }
+        .hc-calendar-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+        .hc-calendar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: #f1f5f9; }
+        .hc-calendar-legend i.is-done { background: #86d5ad; }
+        .hc-calendar-legend i.is-missed { background: #fca5a5; }
+        .hc-calendar-legend i.is-unrecorded { background: #cbd5e1; }
+
+        @media(max-width:640px) {
+          .hc-habit-progress { grid-template-columns: 1fr; }
+          .hc-progress-card { padding: 14px; }
+          .hc-habit-search { grid-template-columns: 1fr; }
+          .hc-calendar { padding: 10px; }
+          .hc-calendar-grid { gap: 3px; }
+          .hc-calendar-day { min-height: 30px; font-size: 11px; }
+        }
+
+        /* HABITOS: titulos e navegacao em azul e negrito */
+        .hc-card h2,
+        .hc-habit-suggestions > strong,
+        .hc-habit-suggestions > p {
+          font-weight: 700;
+        }
+
+        .hc-habits-summary > .hc-stat > span,
+        .hc-card h2 {
+          color: #1d4ed8;
+          font-weight: 800;
+        }
+
+        .hc-card h2 {
+          letter-spacing: -0.01em;
+        }
+
+        .hc-card button,
+        .hc-card a {
+          font-weight: 700;
+        }
+
+      `}
+</style>
+    </main>
+  );
+}
